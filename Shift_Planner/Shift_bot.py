@@ -2,13 +2,13 @@ import streamlit as st
 import pandas as pd
 from collections import defaultdict
 import datetime
-import openai
+from openai import OpenAI
 import os
 from dotenv import load_dotenv
 
 # --- Load .env for API Key ---
 load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # --- Page Config ---
 st.set_page_config(page_title="Βοηθός Προγράμματος Βαρδιών", layout="wide")
@@ -95,7 +95,7 @@ def page_chatbot():
     if st.button("💡 Εκτέλεση Εντολής") and prompt:
         with st.spinner("🔍 Επεξεργασία εντολής..."):
             try:
-                response = openai.ChatCompletion.create(
+                response = client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=[
                         {"role": "system", "content": "Είσαι ένας βοηθός προγραμματισμού βαρδιών που κάνει αλλαγές στο πρόγραμμα."},
