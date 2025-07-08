@@ -27,6 +27,9 @@ def init_session():
     st.session_state.setdefault("edit_index", None)
     st.session_state.setdefault("requirements", defaultdict(lambda: defaultdict(int)))
     st.session_state.setdefault("schedule", pd.DataFrame())
+    st.session_state.setdefault("chat_history", [
+        {"role": "system", "content": "Είσαι ένας βοηθός προγραμματισμού βαρδιών που κάνει αλλαγές στο πρόγραμμα."}
+    ])
 
 # --- Navigation ---
 def navigation():
@@ -67,10 +70,18 @@ def page_schedule():
 
     if st.button("▶️ Δημιουργία Προγράμματος"):
         data = []
-        for day in DAYS:
+        today = datetime.date.today()
+        for i, day in enumerate(DAYS):
+            current_date = today + datetime.timedelta(days=i)
             for shift in st.session_state.active_shifts:
                 for e in st.session_state.employees:
-                    data.append({"Ημέρα": day, "Βάρδια": shift, "Υπάλληλος": e['name'], "Καθήκοντα": ", ".join(e['roles'])})
+                    data.append({
+                        "Ημερομηνία": current_date.strftime("%d/%m/%Y"),
+                        "Ημέρα": day,
+                        "Βάρδια": shift,
+                        "Υπάλληλος": e['name'],
+                        "Καθήκοντα": ", ".join(e['roles'])
+                    })
         st.session_state.schedule = pd.DataFrame(data)
         st.success("✅ Το πρόγραμμα δημιουργήθηκε!")
 
@@ -95,14 +106,13 @@ def page_chatbot():
     if st.button("💡 Εκτέλεση Εντολής") and prompt:
         with st.spinner("🔍 Επεξεργασία εντολής..."):
             try:
+                st.session_state.chat_history.append({"role": "user", "content": prompt})
                 response = client.chat.completions.create(
                     model="gpt-3.5-turbo",
-                    messages=[
-                        {"role": "system", "content": "Είσαι ένας βοηθός προγραμματισμού βαρδιών που κάνει αλλαγές στο πρόγραμμα."},
-                        {"role": "user", "content": prompt},
-                    ]
+                    messages=st.session_state.chat_history
                 )
                 reply = response.choices[0].message.content
+                st.session_state.chat_history.append({"role": "assistant", "content": reply})
                 st.success("✅ Εντολή ολοκληρώθηκε")
                 st.markdown("**Απάντηση:**")
                 st.write(reply)
