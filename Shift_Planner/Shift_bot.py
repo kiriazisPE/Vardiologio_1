@@ -1,115 +1,120 @@
-
 import streamlit as st
 import pandas as pd
-from openai import OpenAI
+from collections import defaultdict
+import datetime
+import openai
 import os
-from copy import deepcopy
 from dotenv import load_dotenv
 
-# ----------- ΡΥΘΜΙΣΗ ----------
-st.set_page_config(page_title="Βοηθός Προγράμματος Βαρδιών", layout="wide")
-st.title("🤖 Βοηθός Προγράμματος Βαρδιών")
-st.caption("Πρόγραμμα και μεταβολές σε φυσική γλώσσα με ειδοποιήσεις παραβίασης")
+# --- Load .env for API Key ---
+load_dotenv()
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
+# --- Page Config ---
+st.set_page_config(page_title="Βοηθός Προγράμματος Βαρδιών", layout="wide")
+
+# --- Constants ---
 DAYS = ["Δευτέρα", "Τρίτη", "Τετάρτη", "Πέμπτη", "Παρασκευή", "Σάββατο", "Κυριακή"]
-SHIFTS = ["Πρωί", "Απόγευμα", "Βράδυ"]
+ALL_SHIFTS = ["Πρωί", "Απόγευμα", "Βράδυ"]
 ROLES = ["Ταμείο", "Σερβιτόρος", "Μάγειρας", "Barista"]
 
-# --- CLIENT με νέο API ---
-load_dotenv()
-client = OpenAI(api_key="OPENAI_API_KEY")  # 🔐 Βάλε εδώ το OpenAI API key σου
+# --- Session State Initialization ---
+def init_session():
+    st.session_state.setdefault("page", 0)
+    st.session_state.setdefault("business_name", "")
+    st.session_state.setdefault("active_shifts", ALL_SHIFTS[:2])
+    st.session_state.setdefault("employees", [])
+    st.session_state.setdefault("edit_index", None)
+    st.session_state.setdefault("requirements", defaultdict(lambda: defaultdict(int)))
+    st.session_state.setdefault("schedule", pd.DataFrame())
 
-# ----------- ΑΡΧΙΚΟΠΟΙΗΣΗ ----------
-if "employees" not in st.session_state:
-    st.session_state.employees = []
-if "schedule" not in st.session_state:
-    st.session_state.schedule = pd.DataFrame()
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
+# --- Navigation ---
+def navigation():
+    st.sidebar.title("🔁 Πλοήγηση")
+    choice = st.sidebar.radio("Μενού", ["1️⃣ Επιχείρηση", "2️⃣ Υπάλληλοι", "3️⃣ Πρόγραμμα", "4️⃣ Chatbot"])
+    st.session_state.page = ["1️⃣ Επιχείρηση", "2️⃣ Υπάλληλοι", "3️⃣ Πρόγραμμα", "4️⃣ Chatbot"].index(choice)
 
-# ----------- ΠΡΟΣΘΗΚΗ ΥΠΑΛΛΗΛΟΥ ----------
-with st.expander("👥 Προσθήκη Υπαλλήλων", expanded=True):
-    name = st.text_input("Όνομα")
-    roles = st.multiselect("Ρόλοι", ROLES)
-    days_off = st.slider("Ρεπό ανά εβδομάδα", 1, 3, 2)
-    availability = st.multiselect("Διαθεσιμότητα για όλες τις ημέρες", SHIFTS)
+# --- Page 1: Business Setup ---
+def page_business():
+    st.header("🏢 Ρυθμίσεις Επιχείρησης")
+    st.session_state.business_name = st.text_input("Όνομα Επιχείρησης", st.session_state.business_name)
+    st.markdown("### Επιλέξτε ενεργές βάρδιες")
+    st.session_state.active_shifts = st.multiselect("Βάρδιες που χρησιμοποιεί η επιχείρηση", ALL_SHIFTS, default=st.session_state.active_shifts)
 
-    if st.button("➕ Προσθήκη"):
-        st.session_state.employees.append({
-            "name": name,
-            "roles": roles,
-            "days_off": days_off,
-            "availability": {day: availability for day in DAYS}
-        })
-        st.success(f"Προστέθηκε ο {name}")
+# --- Page 2: Employees ---
+def page_employees():
+    st.header("👥 Προσθήκη Υπαλλήλων")
+    with st.form("employee_form"):
+        name = st.text_input("Όνομα")
+        roles = st.multiselect("Ρόλοι", ROLES)
+        days_off = st.slider("Ρεπό ανά εβδομάδα", 1, 3, 2)
+        availability = st.multiselect("Διαθεσιμότητα για όλες τις ημέρες", st.session_state.active_shifts)
+        submitted = st.form_submit_button("➕ Προσθήκη")
+        if submitted and name:
+            st.session_state.employees.append({"name": name, "roles": roles, "days_off": days_off, "availability": availability})
+            st.success(f"Ο υπάλληλος {name} προστέθηκε.")
 
-# ----------- ΠΡΟΓΡΑΜΜΑ ----------
-if st.button("🧠 Δημιουργία Προγράμματος"):
-    rows = []
-    workdays = {e["name"]: 0 for e in st.session_state.employees}
-    for day in DAYS:
-        for shift in SHIFTS:
-            for role in ROLES:
+    if st.session_state.employees:
+        st.markdown("### Εγγεγραμμένοι Υπάλληλοι")
+        st.dataframe(pd.DataFrame(st.session_state.employees))
+
+# --- Page 3: Schedule Generation ---
+def page_schedule():
+    st.header("🧠 Δημιουργία Προγράμματος")
+    if not st.session_state.employees:
+        st.warning("Προσθέστε πρώτα υπαλλήλους.")
+        return
+
+    if st.button("▶️ Δημιουργία Προγράμματος"):
+        data = []
+        for day in DAYS:
+            for shift in st.session_state.active_shifts:
                 for e in st.session_state.employees:
-                    if (shift in e["availability"].get(day, [])) and (role in e["roles"]) and workdays[e["name"]] < (7 - e["days_off"]):
-                        rows.append({
-                            "Ημέρα": day,
-                            "Βάρδια": shift,
-                            "Υπάλληλος": e["name"],
-                            "Καθήκοντα": role
-                        })
-                        workdays[e["name"]] += 1
-                        break
-    st.session_state.schedule = pd.DataFrame(rows)
-    st.success("✅ Πρόγραμμα δημιουργήθηκε")
-    st.dataframe(st.session_state.schedule, use_container_width=True)
+                    data.append({"Ημέρα": day, "Βάρδια": shift, "Υπάλληλος": e['name'], "Καθήκοντα": ", ".join(e['roles'])})
+        st.session_state.schedule = pd.DataFrame(data)
+        st.success("✅ Το πρόγραμμα δημιουργήθηκε!")
 
-# ----------- ΣΥΝΟΜΙΛΙΑ ΜΕ ΒΟΗΘΟ ----------
-st.markdown("### 💬 Φυσική Γλώσσα - Βοηθός")
+    if not st.session_state.schedule.empty:
+        st.dataframe(st.session_state.schedule)
+        csv = st.session_state.schedule.to_csv(index=False).encode("utf-8")
+        st.download_button("📥 Εξαγωγή CSV", csv, file_name="programma.csv", mime="text/csv")
 
-question = st.chat_input("Π.χ. Ο Κώστας την Πέμπτη θα μπει βράδυ")
+# --- Page 4: Chatbot ---
+def page_chatbot():
+    st.header("💬 Βοηθός Προγράμματος Βαρδιών")
+    if st.session_state.schedule.empty:
+        st.warning("⚠️ Δημιουργήστε πρώτα πρόγραμμα για να ξεκινήσει η συνομιλία.")
+        return
 
-if not st.session_state.schedule.empty:
-    if question:
-        schedule_csv = st.session_state.schedule.to_csv(index=False)
-        employee_data = pd.DataFrame([{
-            "Όνομα": e["name"],
-            "Ρόλοι": ", ".join(e["roles"]),
-            "Ρεπό": e["days_off"],
-            "Διαθεσιμότητα": str(e["availability"])
-        } for e in st.session_state.employees]).to_csv(index=False)
+    st.markdown("### 📅 Πρόγραμμα")
+    st.dataframe(st.session_state.schedule)
 
-        prompt = f"""
-Έχεις δύο πίνακες:
-1. Πρόγραμμα εργασίας (CSV):
-{schedule_csv}
+    st.markdown("---")
+    st.markdown("### ✍️ Chatbot Εντολές")
+    prompt = st.text_input("Π.χ. Ο Γιώργος να μην δουλεύει Σάββατο βράδυ")
+    if st.button("💡 Εκτέλεση Εντολής") and prompt:
+        with st.spinner("🔍 Επεξεργασία εντολής..."):
+            try:
+                response = openai.ChatCompletion.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": "Είσαι ένας βοηθός προγραμματισμού βαρδιών που κάνει αλλαγές στο πρόγραμμα."},
+                        {"role": "user", "content": prompt},
+                    ]
+                )
+                reply = response.choices[0].message.content
+                st.success("✅ Εντολή ολοκληρώθηκε")
+                st.markdown("**Απάντηση:**")
+                st.write(reply)
+            except Exception as e:
+                st.error(f"Σφάλμα κατά την κλήση OpenAI API: {e}")
 
-2. Δεδομένα υπαλλήλων:
-{employee_data}
+# --- Main ---
+def main():
+    init_session()
+    navigation()
+    page_funcs = [page_business, page_employees, page_schedule, page_chatbot]
+    page_funcs[st.session_state.page]()
 
-Ο χρήστης έδωσε την εξής εντολή:
-"{question}"
-
-Απάντησε:
-- Τι αλλαγή πρέπει να γίνει
-- Αν υπάρχει conflict με τις διαθέσιμες ημέρες ή βάρδιες
-- Αν ο υπάλληλος έχει ήδη βάρδια την επόμενη μέρα (π.χ. νυχτερινή-πρωινή)
-
-Απάντησε στα Ελληνικά με σύντομες παρατηρήσεις.
-"""
-
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "Είσαι βοηθός προγράμματος εργασίας και ελέγχεις αν μια αλλαγή προκαλεί πρόβλημα."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        answer = response.choices[0].message.content.strip()
-        st.session_state.chat_history.append(("🧑‍💼", question))
-        st.session_state.chat_history.append(("🤖", answer))
-
-    for role, msg in st.session_state.chat_history:
-        st.chat_message(role).write(msg)
-else:
-    st.info("⚠️ Δημιούργησε πρώτα πρόγραμμα για να ξεκινήσεις συνομιλία.")
+if __name__ == "__main__":
+    main()
