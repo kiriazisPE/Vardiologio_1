@@ -17,6 +17,7 @@ st.set_page_config(page_title="Βοηθός Προγράμματος Βαρδι�
 DAYS = ["Δευτέρα", "Τρίτη", "Τετάρτη", "Πέμπτη", "Παρασκευή", "Σάββατο", "Κυριακή"]
 ALL_SHIFTS = ["Πρωί", "Απόγευμα", "Βράδυ"]
 ROLES = ["Ταμείο", "Σερβιτόρος", "Μάγειρας", "Barista"]
+SHIFT_EMOJIS = {"Πρωί": "🌅", "Απόγευμα": "🌇", "Βράδυ": "🌙"}
 
 # --- Session State Initialization ---
 def init_session():
@@ -49,13 +50,13 @@ def page_business():
     st.markdown("### Επιλέξτε ενεργές βάρδιες")
     st.session_state.active_shifts = st.multiselect("Βάρδιες που χρησιμοποιεί η επιχείρηση", ALL_SHIFTS, default=st.session_state.active_shifts)
 
-    with st.expander("⚙️ Κανόνες Επιχείρησης", expanded=True):
-        st.session_state.rules["max_employees_per_shift"] = st.slider("Μέγιστος αριθμός υπαλλήλων ανά βάρδια", 1, 20, st.session_state.rules["max_employees_per_shift"])
-        for role in ROLES:
-            st.session_state.rules["max_employees_per_position"][role] = st.slider(f"Μέγιστοι {role} ανά βάρδια", 0, 10, st.session_state.rules["max_employees_per_position"][role])
-        st.session_state.rules["min_rest_hours_between_shifts"] = st.slider("Ελάχιστες ώρες ξεκούρασης μεταξύ βαρδιών", 0, 24, st.session_state.rules["min_rest_hours_between_shifts"])
-        st.session_state.rules["max_consecutive_work_days"] = st.slider("Μέγιστες συνεχόμενες μέρες εργασίας", 1, 7, st.session_state.rules["max_consecutive_work_days"])
-        st.session_state.rules["max_weekly_hours"] = st.slider("Μέγιστες ώρες εργασίας την εβδομάδα", 1, 80, st.session_state.rules["max_weekly_hours"])
+    st.markdown("### Κανόνες Επιχείρησης")
+    st.session_state.rules["max_employees_per_shift"] = st.number_input("Μέγιστος αριθμός υπαλλήλων ανά βάρδια", min_value=1, max_value=20, value=st.session_state.rules["max_employees_per_shift"])
+    for role in ROLES:
+        st.session_state.rules["max_employees_per_position"][role] = st.number_input(f"Μέγιστοι {role} ανά βάρδια", min_value=0, max_value=10, value=st.session_state.rules["max_employees_per_position"][role])
+    st.session_state.rules["min_rest_hours_between_shifts"] = st.number_input("Ελάχιστες ώρες ξεκούρασης μεταξύ βαρδιών", min_value=0, max_value=24, value=st.session_state.rules["min_rest_hours_between_shifts"])
+    st.session_state.rules["max_consecutive_work_days"] = st.number_input("Μέγιστες συνεχόμενες μέρες εργασίας", min_value=1, max_value=7, value=st.session_state.rules["max_consecutive_work_days"])
+    st.session_state.rules["max_weekly_hours"] = st.number_input("Μέγιστες ώρες εργασίας την εβδομάδα", min_value=1, max_value=80, value=st.session_state.rules["max_weekly_hours"])
 
 # --- Page 2: Employees ---
 def page_employees():
@@ -93,8 +94,21 @@ def page_schedule():
         st.success("✅ Το πρόγραμμα δημιουργήθηκε!")
 
     if not st.session_state.schedule.empty:
-        st.dataframe(st.session_state.schedule)
-        csv = st.session_state.schedule.to_csv(index=False).encode("utf-8")
+        st.markdown("### 📅 Πρόγραμμα")
+
+        df = st.session_state.schedule.copy()
+        df["Βάρδια"] = df["Βάρδια"].map(SHIFT_EMOJIS).fillna(df["Βάρδια"])
+
+        selected_emp = st.selectbox("Φιλτράρισμα ανά υπάλληλο", ["Όλοι"] + sorted(df["Υπάλληλος"].unique()))
+        if selected_emp != "Όλοι":
+            df = df[df["Υπάλληλος"] == selected_emp]
+
+        grouped = df.groupby("Ημέρα")
+        for day, group in grouped:
+            with st.expander(f"📆 {day}"):
+                st.dataframe(group.drop(columns=["Ημέρα"], errors='ignore'), use_container_width=True)
+
+        csv = df.to_csv(index=False).encode("utf-8")
         st.download_button("📥 Εξαγωγή CSV", csv, file_name="programma.csv", mime="text/csv")
 
 # --- Page 4: Chatbot ---
@@ -116,7 +130,7 @@ def page_chatbot():
                 st.session_state.chat_history.append({"role": "user", "content": prompt})
                 response = openai.ChatCompletion.create(
                     model="gpt-3.5-turbo",
-                    messages=[{"role": "system", "content": "Είσαι ένας βοηθός προγραμματισμού βαρδιών που κάνει αλλαγές στο πρόγραμμα και έχεις μνήμη."}] + st.session_state.chat_history
+                    messages=[{"role": "system", "content": "Είσαι ένας βοηθός προγραμματισμού βαρδιών που κάνει αλλαγές στο πρόγραμμα."}] + st.session_state.chat_history
                 )
                 reply = response.choices[0].message.content
                 st.session_state.chat_history.append({"role": "assistant", "content": reply})
