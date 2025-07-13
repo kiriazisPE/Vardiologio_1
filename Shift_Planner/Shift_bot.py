@@ -2,13 +2,13 @@ import streamlit as st
 import pandas as pd
 from collections import defaultdict
 import datetime
-import openai
+from openai import OpenAI
 import os
 from dotenv import load_dotenv
 
 # --- Load .env for API Key ---
 load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI()
 
 # --- Page Config ---
 st.set_page_config(page_title="Βοηθός Προγράμματος Βαρδιών", layout="wide")
@@ -49,13 +49,13 @@ def page_business():
     st.markdown("### Επιλέξτε ενεργές βάρδιες")
     st.session_state.active_shifts = st.multiselect("Βάρδιες που χρησιμοποιεί η επιχείρηση", ALL_SHIFTS, default=st.session_state.active_shifts)
 
-    with st.expander("⚙️ Κανόνες Επιχείρησης", expanded=True):
-        st.session_state.rules["max_employees_per_shift"] = st.slider("Μέγιστος αριθμός υπαλλήλων ανά βάρδια", 1, 20, st.session_state.rules["max_employees_per_shift"])
-        for role in ROLES:
-            st.session_state.rules["max_employees_per_position"][role] = st.slider(f"Μέγιστοι {role} ανά βάρδια", 0, 10, st.session_state.rules["max_employees_per_position"][role])
-        st.session_state.rules["min_rest_hours_between_shifts"] = st.slider("Ελάχιστες ώρες ξεκούρασης μεταξύ βαρδιών", 0, 24, st.session_state.rules["min_rest_hours_between_shifts"])
-        st.session_state.rules["max_consecutive_work_days"] = st.slider("Μέγιστες συνεχόμενες μέρες εργασίας", 1, 7, st.session_state.rules["max_consecutive_work_days"])
-        st.session_state.rules["max_weekly_hours"] = st.slider("Μέγιστες ώρες εργασίας την εβδομάδα", 1, 80, st.session_state.rules["max_weekly_hours"])
+    st.markdown("### Κανόνες Επιχείρησης")
+    st.session_state.rules["max_employees_per_shift"] = st.number_input("Μέγιστος αριθμός υπαλλήλων ανά βάρδια", min_value=1, max_value=20, value=st.session_state.rules["max_employees_per_shift"])
+    for role in ROLES:
+        st.session_state.rules["max_employees_per_position"][role] = st.number_input(f"Μέγιστοι {role} ανά βάρδια", min_value=0, max_value=10, value=st.session_state.rules["max_employees_per_position"][role])
+    st.session_state.rules["min_rest_hours_between_shifts"] = st.number_input("Ελάχιστες ώρες ξεκούρασης μεταξύ βαρδιών", min_value=0, max_value=24, value=st.session_state.rules["min_rest_hours_between_shifts"])
+    st.session_state.rules["max_consecutive_work_days"] = st.number_input("Μέγιστες συνεχόμενες μέρες εργασίας", min_value=1, max_value=7, value=st.session_state.rules["max_consecutive_work_days"])
+    st.session_state.rules["max_weekly_hours"] = st.number_input("Μέγιστες ώρες εργασίας την εβδομάδα", min_value=1, max_value=80, value=st.session_state.rules["max_weekly_hours"])
 
 # --- Page 2: Employees ---
 def page_employees():
@@ -83,19 +83,41 @@ def page_schedule():
 
     if st.button("▶️ Δημιουργία Προγράμματος"):
         data = []
+        coverage = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
         today = datetime.date.today()
         for i, day in enumerate(DAYS):
             date = (today + datetime.timedelta(days=i)).strftime("%d/%m/%Y")
             for shift in st.session_state.active_shifts:
-                for e in st.session_state.employees:
-                    data.append({"Ημέρα": f"{day} ({date})", "Βάρδια": shift, "Υπάλληλος": e['name'], "Καθήκοντα": ", ".join(e['roles'])})
+                for role in ROLES:
+                    count = 0
+                    for e in st.session_state.employees:
+                        if role in e["roles"] and shift in e["availability"]:
+                            data.append({"Ημέρα": f"{day} ({date})", "Βάρδια": shift, "Υπάλληλος": e['name'], "Καθήκοντα": role})
+                            count += 1
+                            if count >= st.session_state.rules["max_employees_per_position"][role]:
+                                break
+                    coverage[day][shift][role] = count
         st.session_state.schedule = pd.DataFrame(data)
+        st.session_state.coverage = coverage
         st.success("✅ Το πρόγραμμα δημιουργήθηκε!")
 
     if not st.session_state.schedule.empty:
         st.dataframe(st.session_state.schedule)
         csv = st.session_state.schedule.to_csv(index=False).encode("utf-8")
         st.download_button("📥 Εξαγωγή CSV", csv, file_name="programma.csv", mime="text/csv")
+
+        st.markdown("### ❗Μη Καλυμμένες Θέσεις")
+        uncovered = []
+        for day, shifts in st.session_state.coverage.items():
+            for shift, roles in shifts.items():
+                for role, count in roles.items():
+                    needed = st.session_state.rules["max_employees_per_position"][role]
+                    if count < needed:
+                        uncovered.append({"Ημέρα": day, "Βάρδια": shift, "Ρόλος": role, "Ανεπάρκεια": needed - count})
+        if uncovered:
+            st.dataframe(pd.DataFrame(uncovered))
+        else:
+            st.success("🎉 Όλες οι θέσεις καλύφθηκαν.")
 
 # --- Page 4: Chatbot ---
 def page_chatbot():
@@ -114,9 +136,9 @@ def page_chatbot():
         with st.spinner("🔍 Επεξεργασία εντολής..."):
             try:
                 st.session_state.chat_history.append({"role": "user", "content": prompt})
-                response = openai.ChatCompletion.create(
+                response = client.chat.completions.create(
                     model="gpt-3.5-turbo",
-                    messages=[{"role": "system", "content": "Είσαι ένας βοηθός προγραμματισμού βαρδιών που κάνει αλλαγές στο πρόγραμμα και έχεις μνήμη."}] + st.session_state.chat_history
+                    messages=[{"role": "system", "content": "Είσαι ένας βοηθός προγραμματισμού βαρδιών που κάνει αλλαγές στο πρόγραμμα."}] + st.session_state.chat_history
                 )
                 reply = response.choices[0].message.content
                 st.session_state.chat_history.append({"role": "assistant", "content": reply})
