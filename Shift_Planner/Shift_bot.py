@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from collections import defaultdict
 import datetime
-import openai
+from openai import OpenAI
 import os
 from dotenv import load_dotenv
 
@@ -128,9 +128,13 @@ def page_chatbot():
         with st.spinner("🔍 Επεξεργασία εντολής..."):
             try:
                 st.session_state.chat_history.append({"role": "user", "content": prompt})
-                response = openai.ChatCompletion.create(
+                client = OpenAI()
+
+                response = client.chat.completions.create(
                     model="gpt-3.5-turbo",
-                    messages=[{"role": "system", "content": "Είσαι ένας βοηθός προγραμματισμού βαρδιών που κάνει αλλαγές στο πρόγραμμα."}] + st.session_state.chat_history
+                    messages=[
+                        {"role": "user", "content": "Γεια σου"}
+                    ]
                 )
                 reply = response.choices[0].message.content
                 st.session_state.chat_history.append({"role": "assistant", "content": reply})
