@@ -16,7 +16,8 @@ st.set_page_config(page_title="Βοηθός Προγράμματος Βαρδι�
 # --- Constants ---
 DAYS = ["Δευτέρα", "Τρίτη", "Τετάρτη", "Πέμπτη", "Παρασκευή", "Σάββατο", "Κυριακή"]
 ALL_SHIFTS = ["Πρωί", "Απόγευμα", "Βράδυ"]
-ROLES = ["Ταμείο", "Σερβιτόρος", "Μάγειρας", "Barista"]
+DEFAULT_ROLES = ["Ταμείο", "Σερβιτόρος", "Μάγειρας", "Barista"]
+EXTRA_ROLES = ["Υποδοχή", "Καθαριστής", "Λαντζέρης", "Οδηγός", "Manager"]
 
 # --- Session State Initialization ---
 def init_session():
@@ -56,6 +57,9 @@ def page_business():
         st.markdown("### 📆 Επιλέξτε ενεργές βάρδιες")
         st.session_state.active_shifts = st.multiselect("Βάρδιες που χρησιμοποιεί η επιχείρηση", ALL_SHIFTS, default=st.session_state.active_shifts)
 
+        st.markdown("### 🧱 Επιλογή Ρόλων Επιχείρησης")
+        st.session_state.roles = st.multiselect("Επιλέξτε ρόλους που απαιτούνται στην επιχείρηση", DEFAULT_ROLES + EXTRA_ROLES, default=DEFAULT_ROLES)
+
         st.markdown("### 🛠️ Κανόνες Επιχείρησης")
 
         with st.expander("👥 Μέγιστος αριθμός υπαλλήλων ανά βάρδια"):
@@ -63,10 +67,10 @@ def page_business():
                 "Μέγιστος αριθμός", min_value=1, max_value=20, value=st.session_state.rules["max_employees_per_shift"]
             )
 
-        for role in ROLES:
+        for role in st.session_state.roles:
             with st.expander(f"👤 Μέγιστοι {role} ανά βάρδια"):
                 st.session_state.rules["max_employees_per_position"][role] = st.number_input(
-                    f"{role}", min_value=0, max_value=10, value=st.session_state.rules["max_employees_per_position"][role], key=f"role_{role}"
+                    f"{role}", min_value=0, max_value=10, value=st.session_state.rules["max_employees_per_position"].get(role, 2), key=f"role_{role}"
                 )
 
         with st.expander("⏱️ Ελάχιστες ώρες ξεκούρασης μεταξύ βαρδιών"):
@@ -85,13 +89,12 @@ def page_business():
             )
 
         st.success("✅ Οι ρυθμίσεις αποθηκεύτηκαν.")
-
 # --- Page 2: Employees ---
 def page_employees():
     st.header("👥 Προσθήκη Υπαλλήλων")
     with st.form("employee_form"):
         name = st.text_input("Όνομα")
-        roles = st.multiselect("Ρόλοι", ROLES)
+        roles = st.multiselect("Ρόλοι", st.session_state.roles)
         days_off = st.slider("Ρεπό ανά εβδομάδα", 1, 3, 2)
         availability = st.multiselect("Διαθεσιμότητα για όλες τις ημέρες", st.session_state.active_shifts)
         submitted = st.form_submit_button("➕ Προσθήκη")
@@ -101,8 +104,15 @@ def page_employees():
 
     if st.session_state.employees:
         st.markdown("### Εγγεγραμμένοι Υπάλληλοι")
-        st.dataframe(pd.DataFrame(st.session_state.employees))
-
+        for i, emp in enumerate(st.session_state.employees):
+            with st.expander(f"👤 {emp['name']}"):
+                st.write(emp)
+                col1, col2 = st.columns(2)
+                if col1.button("✏️ Επεξεργασία", key=f"edit_{i}"):
+                    st.session_state.edit_index = i
+                if col2.button("🗑️ Διαγραφή", key=f"delete_{i}"):
+                    st.session_state.employees.pop(i)
+                    st.experimental_rerun()
 # --- Page 3: Schedule Generation ---
 def page_schedule():
     st.header("🧠 Δημιουργία Προγράμματος")
