@@ -4,6 +4,7 @@ from collections import defaultdict
 import datetime
 from openai import OpenAI
 import os
+import re
 from dotenv import load_dotenv
 
 # --- Load .env for API Key ---
@@ -93,8 +94,7 @@ def page_business():
 
 # --- Page 4: Chatbot Commands ---
 def extract_name_and_date(cmd):
-    """Προσπάθησε να εξάγεις όνομα υπαλλήλου και ημερομηνία από την εντολή"""
-    match = re.search(r"βγ(άλε|άζεις)?.*τον\s+(.*?)\s+.*?(Δευτέρα|Τρίτη|Τετάρτη|Πέμπτη|Παρασκευή|Σάββατο|Κυριακή)\s*\((\d{2}/\d{2}/\d{4})\)", cmd)
+    match = re.search(r"βγ(άλε|άζεις)?.*τον\\s+(.*?)\\s+.*?(Δευτέρα|Τρίτη|Τετάρτη|Πέμπτη|Παρασκευή|Σάββατο|Κυριακή)\\s*\\((\\d{2}/\\d{2}/\\d{4})\\)", cmd)
     if match:
         name = match.group(2).strip()
         day_str = f"{match.group(3)} ({match.group(4)})"
