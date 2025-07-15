@@ -180,64 +180,48 @@ def extract_name_and_day(text):
 
     return None, None
 
-
 def page_chatbot():
     st.title("🍊 Chatbot Εντολές")
-    st.markdown("Π.χ. Ο Γιώργος να μην δουλεύει Σάββατο βράδυ")
+    st.markdown("Π.χ. Ο Κώστας δε μπορεί να δουλέψει αύριο")
 
-    command = st.text_input(" ", placeholder="π.χ. Ο Κώστας δε μπορεί να δουλέψει αύριο")
+    user_input = st.text_input("Εντολή", placeholder="π.χ. Ο Κώστας δε μπορεί να δουλέψει αύριο", key="chat_input")
 
-    if st.button("💡 Εκτέλεση Εντολής", key="execute_command"):
+    if st.button("💡 Εκτέλεση Εντολής", key="execute_command_intent"):
         if "schedule_df" not in st.session_state:
             st.error("Δεν έχει δημιουργηθεί πρόγραμμα.")
             return
 
+        intent = classify_intent(user_input, intent_examples)
         schedule_df = st.session_state.schedule_df
 
-        name, date_str = extract_name_and_day(command)
-
-        if name is None or date_str is None:
-            st.error("❌ Δεν κατάλαβα την εντολή. Χρησιμοποίησε π.χ.: βγάλε τον Γιώργο από το πρόγραμμα την Τρίτη (16/07/2025)")
-            return
-
-        mask = (schedule_df['Ημέρα'] == date_str) & (schedule_df['Υπάλληλος'].str.lower() == name.lower())
-        if not mask.any():
-            st.warning(f"🔍 Ο {name} δεν έχει βάρδια για {date_str} ή το όνομα είναι λάθος.")
-        else:
-            st.session_state.schedule_df = schedule_df[~mask].reset_index(drop=True)
-            st.success(f"✅ Ο {name} αφαιρέθηκε από το πρόγραμμα για {date_str}.")
-
-    # ---- INTENT BASED ----
-    user_input = st.text_input("Π.χ. Ο Γιώργος να μην δουλεύει Σάββατο βράδυ", key="chat_input")
-
-    if st.button("💡 Εκτέλεση Εντολής", key="execute_command_intent"):
-        intent = classify_intent(user_input, intent_examples)
-
         if intent == "remove_from_schedule":
-            st.success("🗓 Αναγνωρίστηκε: Εκτός προγράμματος")
             name, day = extract_name_and_day(user_input)
             if name and day:
-                st.success(f"Ο {name} θα αφαιρεθεί από το πρόγραμμα την {day}")
-                # TODO: Αφαίρεση από schedule_df
+                st.success(f"🗓 Ο {name} θα αφαιρεθεί από το πρόγραμμα την {day}")
+                # Λογική διαγραφής από schedule_df
+                mask = (schedule_df['Ημέρα'] == day) & (schedule_df['Υπάλληλος'].str.lower() == name.lower())
+                if not mask.any():
+                    st.warning(f"🔍 Ο {name} δεν έχει βάρδια για {day} ή το όνομα είναι λάθος.")
+                else:
+                    st.session_state.schedule_df = schedule_df[~mask].reset_index(drop=True)
+                    st.success(f"✅ Ο {name} αφαιρέθηκε από το πρόγραμμα για {day}.")
+
+        elif intent == "add_day_off":
+            name, days = extract_name_and_days(user_input)
+            if name and days:
+                st.warning(f"🌴 Ο {name} θα είναι εκτός για {days} ημέρες")
+                # Λογική αποκλεισμού πολλαπλών ημερών εδώ
+
+        elif intent == "availability_change":
+            st.info("🔄 Αναγνωρίστηκε: Αλλαγή διαθεσιμότητας")
+            # Λογική αλλαγής διαθεσιμότητας
 
         elif intent == "change_shift":
             st.info("🔁 Αναγνωρίστηκε: Αλλαγή βάρδιας")
-            # TODO: Λογική αλλαγής βάρδιας
-
-        elif intent == "availability_change":
-            st.warning("🔄 Αναγνωρίστηκε: Αλλαγή διαθεσιμότητας")
-            # TODO: Λογική αλλαγής διαθεσιμότητας
-
-        elif intent == "add_day_off":
-            st.warning("🌴 Αναγνωρίστηκε: Προσθήκη ρεπό")
-            name, days = extract_name_and_days(user_input)
-            if name and days:
-                st.warning(f"Ο {name} θα είναι εκτός για {days} ημέρες")
-                # TODO: Λογική αποκλεισμού πολλαπλών ημερών
+            # Λογική αλλαγής βάρδιας
 
         else:
             st.error("❌ Δεν αναγνωρίστηκε η κατηγορία εντολής.")
-
 
 
 # --- Page 2: Employees ---
