@@ -35,6 +35,7 @@ def init_session():
         "max_consecutive_work_days": 5,
         "max_weekly_hours": 40,
     })
+    st.session_state.setdefault("business_stage", 1)
 
 # --- Navigation ---
 def navigation():
@@ -45,17 +46,45 @@ def navigation():
 # --- Page 1: Business Setup ---
 def page_business():
     st.header("🏢 Ρυθμίσεις Επιχείρησης")
-    st.session_state.business_name = st.text_input("Όνομα Επιχείρησης", st.session_state.business_name)
-    st.markdown("### Επιλέξτε ενεργές βάρδιες")
-    st.session_state.active_shifts = st.multiselect("Βάρδιες που χρησιμοποιεί η επιχείρηση", ALL_SHIFTS, default=st.session_state.active_shifts)
 
-    st.markdown("### Κανόνες Επιχείρησης")
-    st.session_state.rules["max_employees_per_shift"] = st.number_input("Μέγιστος αριθμός υπαλλήλων ανά βάρδια", min_value=1, max_value=20, value=st.session_state.rules["max_employees_per_shift"])
-    for role in ROLES:
-        st.session_state.rules["max_employees_per_position"][role] = st.number_input(f"Μέγιστοι {role} ανά βάρδια", min_value=0, max_value=10, value=st.session_state.rules["max_employees_per_position"][role])
-    st.session_state.rules["min_rest_hours_between_shifts"] = st.number_input("Ελάχιστες ώρες ξεκούρασης μεταξύ βαρδιών", min_value=0, max_value=24, value=st.session_state.rules["min_rest_hours_between_shifts"])
-    st.session_state.rules["max_consecutive_work_days"] = st.number_input("Μέγιστες συνεχόμενες μέρες εργασίας", min_value=1, max_value=7, value=st.session_state.rules["max_consecutive_work_days"])
-    st.session_state.rules["max_weekly_hours"] = st.number_input("Μέγιστες ώρες εργασίας την εβδομάδα", min_value=1, max_value=80, value=st.session_state.rules["max_weekly_hours"])
+    if st.session_state.business_stage == 1:
+        st.session_state.business_name = st.text_input("Εισάγετε το όνομα της επιχείρησης", st.session_state.business_name)
+        if st.button("➡️ Συνέχεια") and st.session_state.business_name.strip():
+            st.session_state.business_stage = 2
+
+    elif st.session_state.business_stage == 2:
+        st.markdown("### 📆 Επιλέξτε ενεργές βάρδιες")
+        st.session_state.active_shifts = st.multiselect("Βάρδιες που χρησιμοποιεί η επιχείρηση", ALL_SHIFTS, default=st.session_state.active_shifts)
+
+        st.markdown("### 🛠️ Κανόνες Επιχείρησης")
+
+        with st.expander("👥 Μέγιστος αριθμός υπαλλήλων ανά βάρδια"):
+            st.session_state.rules["max_employees_per_shift"] = st.number_input(
+                "Μέγιστος αριθμός", min_value=1, max_value=20, value=st.session_state.rules["max_employees_per_shift"]
+            )
+
+        for role in ROLES:
+            with st.expander(f"👤 Μέγιστοι {role} ανά βάρδια"):
+                st.session_state.rules["max_employees_per_position"][role] = st.number_input(
+                    f"{role}", min_value=0, max_value=10, value=st.session_state.rules["max_employees_per_position"][role], key=f"role_{role}"
+                )
+
+        with st.expander("⏱️ Ελάχιστες ώρες ξεκούρασης μεταξύ βαρδιών"):
+            st.session_state.rules["min_rest_hours_between_shifts"] = st.number_input(
+                "Ελάχιστες ώρες", min_value=0, max_value=24, value=st.session_state.rules["min_rest_hours_between_shifts"]
+            )
+
+        with st.expander("📅 Μέγιστες συνεχόμενες μέρες εργασίας"):
+            st.session_state.rules["max_consecutive_work_days"] = st.number_input(
+                "Ημέρες", min_value=1, max_value=7, value=st.session_state.rules["max_consecutive_work_days"]
+            )
+
+        with st.expander("⏳ Μέγιστες ώρες εργασίας την εβδομάδα"):
+            st.session_state.rules["max_weekly_hours"] = st.number_input(
+                "Ώρες", min_value=1, max_value=80, value=st.session_state.rules["max_weekly_hours"]
+            )
+
+        st.success("✅ Οι ρυθμίσεις αποθηκεύτηκαν.")
 
 # --- Page 2: Employees ---
 def page_employees():
