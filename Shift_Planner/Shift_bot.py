@@ -16,7 +16,7 @@ load_dotenv()
 client = OpenAI()
 
 # Φόρτωση intent examples
-intent_file = Path("intent_examples.json")
+intent_file = Path("C:/Users/akiri/Documents/GitHub/Vardiologio/Shift_Planner/intent_examples.json")
 with intent_file.open(encoding="utf-8") as f:
     intent_examples = json.load(f)
 
