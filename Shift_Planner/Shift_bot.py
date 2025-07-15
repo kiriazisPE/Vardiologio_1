@@ -156,13 +156,13 @@ def page_chatbot():
 def page_employees():
     st.header("👥 Προσθήκη ή Επεξεργασία Υπαλλήλων")
 
+    # Πρώτη χρήση του edit_index
     if "edit_index" not in st.session_state:
         st.session_state.edit_index = None
-    if "rerun" in st.session_state:
-        del st.session_state["rerun"]
 
     is_editing = st.session_state.edit_index is not None
 
+    # Default τιμές
     if is_editing:
         emp = st.session_state.employees[st.session_state.edit_index]
         default_name = emp["name"]
@@ -205,32 +205,28 @@ def page_employees():
                 else:
                     st.session_state.employees.append(employee_data)
                     st.success(f"✅ Ο υπάλληλος '{name}' προστέθηκε.")
+                # Καθαρισμός edit mode
                 st.session_state.edit_index = None
-                st.session_state.rerun_trigger = True
-                st.stop()
 
-
-    if st.session_state.employees:
+    # Αν edit_index είναι None (όχι σε κατάσταση επεξεργασίας)
+    if st.session_state.edit_index is None and st.session_state.employees:
         st.markdown("### Εγγεγραμμένοι Υπάλληλοι")
         for i, emp in enumerate(st.session_state.employees):
             with st.expander(f"👤 {emp['name']}"):
                 col1, col2 = st.columns([4, 1])
                 with col1:
-                    st.markdown(
-                        "**Ρόλοι:** " + ', '.join(emp['roles']) + "  \n"
-                        "**Ρεπό:** " + str(emp['days_off']) + "  \n"
-                        "**Διαθεσιμότητα:** " + ', '.join(emp['availability'])
-                    )
+                    st.markdown(f"""
+                **Ρόλοι:** {', '.join(emp['roles'])}  
+                **Ρεπό:** {emp['days_off']}  
+                **Διαθεσιμότητα:** {', '.join(emp['availability'])}
+                """)
 
                 with col2:
                     if st.button("✏️ Επεξεργασία", key=f"edit_{i}"):
                         st.session_state.edit_index = i
-                        st.session_state.rerun_trigger = True
-                        st.stop()
-
                     if st.button("🗑️ Διαγραφή", key=f"delete_{i}"):
                         del st.session_state.employees[i]
-                        st.session_state.rerun_trigger = True
+                        st.experimental_set_query_params()  # ασφαλές refresh
                         st.stop()
 
 
