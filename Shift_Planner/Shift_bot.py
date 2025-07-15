@@ -11,6 +11,7 @@ from pathlib import Path
 from difflib import SequenceMatcher
 
 
+
 # --- Load .env for API Key ---
 load_dotenv()
 client = OpenAI()
@@ -155,45 +156,35 @@ def page_business():
 def extract_name_and_day(text):
     name_match = re.search(r"(ο|η)?\s*([Α-Ωα-ωίϊΐόάέύϋΰήώΑ-Ζ]+)", text)
     name = name_match.group(2) if name_match else None
-
-    # Αναγνώριση σχετικών ημερών
     for word, offset in relative_keywords.items():
         if word in text:
-            target_date = datetime.now() + timedelta(days=offset)
+            target_date = datetime.datetime.now() + datetime.timedelta(days=offset)
             weekday = greek_weekdays[target_date.weekday()]
             return name, f"{weekday} ({target_date.strftime('%d/%m/%Y')})"
-
-    # Νέα προσθήκη: εύρεση εύρους ημερών (π.χ. 10 μέρες)
     match_days = re.search(r"επόμεν(ες|ους)? (\d{1,2}) μέρ", text)
     if match_days:
         num_days = int(match_days.group(2))
         dates = []
         for i in range(num_days):
-            target_date = datetime.now() + timedelta(days=i)
+            target_date = datetime.datetime.now() + datetime.timedelta(days=i)
             weekday = greek_weekdays[target_date.weekday()]
             dates.append(f"{weekday} ({target_date.strftime('%d/%m/%Y')})")
         return name, dates
-
     date_match = re.search(combined_date_pattern, text)
     if date_match:
         return name, date_match.group()
-
     return None, None
 
 def page_chatbot():
     st.title("🍊 Chatbot Εντολές")
     st.markdown("Π.χ. Ο Κώστας δε μπορεί να δουλέψει αύριο")
-
     user_input = st.text_input("Εντολή", placeholder="π.χ. Ο Κώστας δε μπορεί να δουλέψει αύριο", key="chat_input")
-
     if "schedule" not in st.session_state or st.session_state.schedule.empty:
         st.warning("📋 Δεν έχει δημιουργηθεί πρόγραμμα. Πήγαινε στη σελίδα 'Πρόγραμμα' για να δημιουργήσεις.")
         return
-
     if st.button("💡 Εκτέλεση Εντολής", key="execute_command_intent"):
         intent = classify_intent(user_input, intent_examples)
         schedule_df = st.session_state.schedule
-
         if intent == "remove_from_schedule":
             name, day = extract_name_and_day(user_input)
             if name and day:
@@ -204,16 +195,12 @@ def page_chatbot():
                 else:
                     st.session_state.schedule = schedule_df[~mask].reset_index(drop=True)
                     st.success(f"✅ Ο {name} αφαιρέθηκε από το πρόγραμμα για {day}.")
-
         elif intent == "add_day_off":
             st.warning("🚧 Λειτουργία 'add_day_off' υπό ανάπτυξη.")
-
         elif intent == "availability_change":
             st.info("🔄 Αναγνωρίστηκε: Αλλαγή διαθεσιμότητας (υπό ανάπτυξη)")
-
         elif intent == "change_shift":
             st.info("🔁 Αναγνωρίστηκε: Αλλαγή βάρδιας (υπό ανάπτυξη)")
-
         else:
             st.error("❌ Δεν αναγνωρίστηκε η κατηγορία εντολής.")
 
