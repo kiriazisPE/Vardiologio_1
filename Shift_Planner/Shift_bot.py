@@ -185,47 +185,37 @@ def page_chatbot():
     st.markdown("Π.χ. Ο Κώστας δε μπορεί να δουλέψει αύριο")
 
     user_input = st.text_input("Εντολή", placeholder="π.χ. Ο Κώστας δε μπορεί να δουλέψει αύριο", key="chat_input")
-    if "schedule_df" not in st.session_state:
+
+    if "schedule" not in st.session_state or st.session_state.schedule.empty:
         st.warning("📋 Δεν έχει δημιουργηθεί πρόγραμμα. Πήγαινε στη σελίδα 'Πρόγραμμα' για να δημιουργήσεις.")
         return
 
     if st.button("💡 Εκτέλεση Εντολής", key="execute_command_intent"):
-        if "schedule_df" not in st.session_state:
-            st.error("Δεν έχει δημιουργηθεί πρόγραμμα.")
-            return
-
         intent = classify_intent(user_input, intent_examples)
-        schedule_df = st.session_state.schedule_df
+        schedule_df = st.session_state.schedule
 
         if intent == "remove_from_schedule":
             name, day = extract_name_and_day(user_input)
             if name and day:
                 st.success(f"🗓 Ο {name} θα αφαιρεθεί από το πρόγραμμα την {day}")
-                # Λογική διαγραφής από schedule_df
                 mask = (schedule_df['Ημέρα'] == day) & (schedule_df['Υπάλληλος'].str.lower() == name.lower())
                 if not mask.any():
                     st.warning(f"🔍 Ο {name} δεν έχει βάρδια για {day} ή το όνομα είναι λάθος.")
                 else:
-                    st.session_state.schedule_df = schedule_df[~mask].reset_index(drop=True)
+                    st.session_state.schedule = schedule_df[~mask].reset_index(drop=True)
                     st.success(f"✅ Ο {name} αφαιρέθηκε από το πρόγραμμα για {day}.")
 
         elif intent == "add_day_off":
-            name, days = extract_name_and_days(user_input)
-            if name and days:
-                st.warning(f"🌴 Ο {name} θα είναι εκτός για {days} ημέρες")
-                # Λογική αποκλεισμού πολλαπλών ημερών εδώ
+            st.warning("🚧 Λειτουργία 'add_day_off' υπό ανάπτυξη.")
 
         elif intent == "availability_change":
-            st.info("🔄 Αναγνωρίστηκε: Αλλαγή διαθεσιμότητας")
-            # Λογική αλλαγής διαθεσιμότητας
+            st.info("🔄 Αναγνωρίστηκε: Αλλαγή διαθεσιμότητας (υπό ανάπτυξη)")
 
         elif intent == "change_shift":
-            st.info("🔁 Αναγνωρίστηκε: Αλλαγή βάρδιας")
-            # Λογική αλλαγής βάρδιας
+            st.info("🔁 Αναγνωρίστηκε: Αλλαγή βάρδιας (υπό ανάπτυξη)")
 
         else:
             st.error("❌ Δεν αναγνωρίστηκε η κατηγορία εντολής.")
-
 
 # --- Page 2: Employees ---
 
