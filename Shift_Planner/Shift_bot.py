@@ -7,6 +7,7 @@ import os
 import re
 from dotenv import load_dotenv
 
+
 # --- Load .env for API Key ---
 load_dotenv()
 client = OpenAI()
@@ -19,6 +20,39 @@ DAYS = ["Δευτέρα", "Τρίτη", "Τετάρτη", "Πέμπτη", "Πα�
 ALL_SHIFTS = ["Πρωί", "Απόγευμα", "Βράδυ"]
 DEFAULT_ROLES = ["Ταμείο", "Σερβιτόρος", "Μάγειρας", "Barista"]
 EXTRA_ROLES = ["Υποδοχή", "Καθαριστής", "Λαντζέρης", "Οδηγός", "Manager"]
+
+greek_weekdays = [
+    "Δευτέρα", "Τρίτη", "Τετάρτη", "Πέμπτη",
+    "Παρασκευή", "Σάββατο", "Κυριακή"
+]
+
+unavailability_phrases = [
+    r"δε(ν)? μπορεί",
+    r"δεν θα δουλέψει",
+    r"έχει ρεπό",
+    r"λείπει",
+    r"δεν είναι διαθέσιμ",
+    r"είναι άρρωσ",
+    r"χτύπησε",
+    r"τραυματίστηκε",
+    r"αρρώστησε"
+]
+
+relative_keywords = {
+    "αύριο": 1,
+    "μεθαύριο": 2
+}
+
+day_pattern = r"(Δευτέρα|Τρίτη|Τετάρτη|Πέμπτη|Παρασκευή|Σάββατο|Κυριακή)"
+date_pattern = r"\d{2}/\d{2}/\d{4}"
+combined_date_pattern = fr"{day_pattern} ({{date_pattern}})"
+
+
+
+
+
+
+
 
 # --- Session State Initialization ---
 def init_session():
@@ -93,63 +127,45 @@ def page_business():
         st.success("✅ Οι ρυθμίσεις αποθηκεύτηκαν.")
 
 # --- Page 4: Chatbot Commands ---
-def extract_name_and_date(cmd):
-    # Παράδειγμα: "βγάλε τον Γιώργο από το πρόγραμμα την Τρίτη (16/07/2025)"
-    date_pattern = re.search(r"βγ(άλε|άζεις)?.*τον\s+(.*?)\s+.*?(Δευτέρα|Τρίτη|Τετάρτη|Πέμπτη|Παρασκευή|Σάββατο|Κυριακή)\s*\((\d{2}/\d{2}/\d{4})\)", cmd, re.IGNORECASE)
-    if date_pattern:
-        name = date_pattern.group(2).strip()
-        day_str = f"{date_pattern.group(3)} ({date_pattern.group(4)})"
-        return name, day_str
+def extract_name_and_day(text):
+    name_match = re.search(r"(ο|η)?\s*([Α-Ωα-ωίϊΐόάέύϋΰήώΑ-Ζ]+)", text)
+    name = name_match.group(2) if name_match else None
 
-    # Παράδειγμα: "βγάλε τον Νίκο από όλες τις Κυριακές"
-    recurring_pattern = re.search(r"βγ(άλε|άζεις)?.*τον\s+(.*?)\s+.*όλες τις\s+(Δευτέρες|Τρίτες|Τετάρτες|Πέμπτες|Παρασκευές|Σάββατα|Κυριακές)", cmd, re.IGNORECASE)
-    if recurring_pattern:
-        name = recurring_pattern.group(2).strip()
-        weekday_plural = recurring_pattern.group(3).strip().lower()
+    for word, offset in relative_keywords.items():
+        if word in text:
+            target_date = datetime.now() + timedelta(days=offset)
+            weekday = greek_weekdays[target_date.weekday()]
+            return name, f"{weekday} ({target_date.strftime('%d/%m/%Y')})"
 
-        mapping = {
-            "δευτέρες": "Δευτέρα",
-            "τρίτες": "Τρίτη",
-            "τετάρτες": "Τετάρτη",
-            "πέμπτες": "Πέμπτη",
-            "παρασκευές": "Παρασκευή",
-            "σάββατα": "Σάββατο",
-            "κυριακές": "Κυριακή"
-        }
-
-        if weekday_plural in mapping:
-            return name, mapping[weekday_plural]
-
-    return None, None
+    date_match = re.search(combined_date_pattern, text)
+    if date_match:
+        return name, date_match.group()
 
 def page_chatbot():
-    st.header("🍊 Chatbot Εντολές")
+    st.title("🍊 Chatbot Εντολές")
     st.markdown("Π.χ. Ο Γιώργος να μην δουλεύει Σάββατο βράδυ")
 
-    user_cmd = st.text_input("", "βγάλε τον asas από όλες τις Κυριακές")
+    command = st.text_input(" ", placeholder="π.χ. Ο Κώστας δε μπορεί να δουλέψει αύριο")
+
     if st.button("💡 Εκτέλεση Εντολής"):
-        name, target = extract_name_and_date(user_cmd)
-        if not name or not target:
-            st.error("⛔ Δεν κατάλαβα την εντολή. Χρησιμοποίησε π.χ.: βγάλε τον Γιώργο από το πρόγραμμα την Τρίτη (16/07/2025)")
+        if "schedule_df" not in st.session_state:
+            st.error("Δεν έχει δημιουργηθεί πρόγραμμα.")
             return
 
-        df = st.session_state.schedule.copy()
-        initial_len = len(df)
+        schedule_df = st.session_state.schedule_df
 
-        if "(" in target:
-            # Συγκεκριμένη ημερομηνία
-            df = df[~((df["Ημέρα"] == target) & (df["Υπάλληλος"] == name))]
+        name, date_str = extract_name_and_day(command)
+
+        if name is None or date_str is None:
+            st.error("❌ Δεν κατάλαβα την εντολή. Χρησιμοποίησε π.χ.: βγάλε τον Γιώργο από το πρόγραμμα την Τρίτη (16/07/2025)")
+            return
+
+        mask = (schedule_df['Ημέρα'] == date_str) & (schedule_df['Υπάλληλος'].str.lower() == name.lower())
+        if not mask.any():
+            st.warning(f"🔍 Ο {name} δεν έχει βάρδια για {date_str} ή το όνομα είναι λάθος.")
         else:
-            # Επαναλαμβανόμενη ημέρα, π.χ. "Κυριακή"
-            df = df[~((df["Ημέρα"].str.startswith(target)) & (df["Υπάλληλος"] == name))]
-
-        st.session_state.schedule = df.reset_index(drop=True)
-
-        st.success("✅ Εντολή ολοκληρώθηκε")
-        if len(df) < initial_len:
-            st.write(f"Αφαιρέθηκε ο υπάλληλος **{name}** από το πρόγραμμα για **{target}**.")
-        else:
-            st.write(f"Ο υπάλληλος **{name}** δεν βρέθηκε στο πρόγραμμα για **{target}**.")
+            st.session_state.schedule_df = schedule_df[~mask].reset_index(drop=True)
+            st.success(f"✅ Ο {name} αφαιρέθηκε από το πρόγραμμα για {date_str}.")
 
 # --- Page 2: Employees ---
 
