@@ -15,10 +15,15 @@ from difflib import SequenceMatcher
 load_dotenv()
 client = OpenAI()
 
-# Φόρτωση intent examples
-intent_file = Path("C:/Users/akiri/Documents/GitHub/Vardiologio/Shift_Planner/intent_examples.json")
-with intent_file.open(encoding="utf-8") as f:
-    intent_examples = json.load(f)
+# Φόρτωση intent_examples.json από τον ίδιο φάκελο με το script
+intent_file = Path(__file__).parent / "intent_examples.json"
+
+if not intent_file.exists():
+    st.error(f"❌ Το αρχείο {intent_file.name} δεν βρέθηκε στον φάκελο της εφαρμογής.")
+    intent_examples = []
+else:
+    with intent_file.open(encoding="utf-8") as f:
+        intent_examples = json.load(f)
 
 def classify_intent(user_input: str, examples: dict) -> str:
     best_match = ("", 0.0)  # (intent, similarity_score)
