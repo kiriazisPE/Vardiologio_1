@@ -214,11 +214,12 @@ def page_employees():
             with st.expander(f"👤 {emp['name']}"):
                 col1, col2 = st.columns([4, 1])
                 with col1:
-                    st.markdown(f"""
-                        **Ρόλοι:** {', '.join(emp['roles'])}  
-                        **Ρεπό:** {emp['days_off']}  
-                        **Διαθεσιμότητα:** {', '.join(emp['availability'])}
-                    """)
+                    st.markdown(
+                        "**Ρόλοι:** " + ', '.join(emp['roles']) + "  \n"
+                        "**Ρεπό:** " + str(emp['days_off']) + "  \n"
+                        "**Διαθεσιμότητα:** " + ', '.join(emp['availability'])
+                    )
+
                 with col2:
                     if st.button("✏️ Επεξεργασία", key=f"edit_{i}"):
                         st.session_state.edit_index = i
