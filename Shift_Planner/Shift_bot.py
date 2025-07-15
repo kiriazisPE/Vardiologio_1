@@ -153,35 +153,52 @@ def page_chatbot():
 
 # --- Page 2: Employees ---
 def page_employees():
-    st.header("👥 Προσθήκη Υπαλλήλων")
+    st.header("👥 Προσθήκη ή Επεξεργασία Υπαλλήλων")
 
-    # Διαγραφή με deferred δράση
-    if "to_delete_index" in st.session_state:
-        idx = st.session_state.to_delete_index
-        if 0 <= idx < len(st.session_state.employees):
-            del st.session_state.employees[idx]
-        del st.session_state["to_delete_index"]
+    if "edit_index" not in st.session_state:
+        st.session_state.edit_index = None
+
+    is_editing = st.session_state.edit_index is not None
+
+    if is_editing:
+        emp = st.session_state.employees[st.session_state.edit_index]
+        default_name = emp["name"]
+        default_roles = emp["roles"]
+        default_days_off = emp["days_off"]
+        default_availability = emp["availability"]
+    else:
+        default_name = ""
+        default_roles = []
+        default_days_off = 2
+        default_availability = []
 
     with st.form("employee_form"):
-        name = st.text_input("Όνομα")
-        roles = st.multiselect("Ρόλοι", st.session_state.roles)
-        days_off = st.slider("Ρεπό ανά εβδομάδα", 1, 3, 2)
-        availability = st.multiselect("Διαθεσιμότητα για όλες τις ημέρες", st.session_state.active_shifts)
-        submitted = st.form_submit_button("➕ Προσθήκη")
+        name = st.text_input("Όνομα", value=default_name)
+        roles = st.multiselect("Ρόλοι", st.session_state.roles, default=default_roles)
+        days_off = st.slider("Ρεπό ανά εβδομάδα", 1, 3, default_days_off)
+        availability = st.multiselect("Διαθεσιμότητα για όλες τις ημέρες", st.session_state.active_shifts, default=default_availability)
+        submitted = st.form_submit_button("💾 Αποθήκευση")
 
         if submitted:
             name_lower = name.strip().lower()
-            existing_names = [e["name"].strip().lower() for e in st.session_state.employees]
+            existing_names = [e["name"].strip().lower() for i, e in enumerate(st.session_state.employees) if i != st.session_state.edit_index]
+
             if name_lower in existing_names:
                 st.error(f"⚠️ Ο υπάλληλος '{name}' υπάρχει ήδη.")
             elif name:
-                st.session_state.employees.append({
+                employee_data = {
                     "name": name.strip(),
                     "roles": roles,
                     "days_off": days_off,
                     "availability": availability
-                })
-                st.success(f"Ο υπάλληλος {name} προστέθηκε.")
+                }
+                if is_editing:
+                    st.session_state.employees[st.session_state.edit_index] = employee_data
+                    st.success(f"✅ Ο υπάλληλος '{name}' ενημερώθηκε.")
+                    st.session_state.edit_index = None
+                else:
+                    st.session_state.employees.append(employee_data)
+                    st.success(f"✅ Ο υπάλληλος '{name}' προστέθηκε.")
 
     if st.session_state.employees:
         st.markdown("### Εγγεγραμμένοι Υπάλληλοι")
@@ -193,11 +210,10 @@ def page_employees():
                 with col2:
                     if st.button("✏️ Επεξεργασία", key=f"edit_{i}"):
                         st.session_state.edit_index = i
-                        st.warning("✏️ Η επεξεργασία θα προστεθεί σύντομα.")
+                        st.experimental_rerun()
                     if st.button("🗑️ Διαγραφή", key=f"delete_{i}"):
-                        st.session_state.to_delete_index = i
-                        st.experimental_set_query_params()  # forces refresh χωρίς rerun
-                        st.stop()
+                        del st.session_state.employees[i]
+                        st.experimental_rerun()
 
 # --- Page 3: Schedule Generation ---
 def page_schedule():
