@@ -31,7 +31,7 @@ def init_session():
     st.session_state.setdefault("chat_history", [])
     st.session_state.setdefault("rules", {
         "max_employees_per_shift": 5,
-        "max_employees_per_position": {role: 2 for role in ROLES},
+        "max_employees_per_position": {role: 2 for role in DEFAULT_ROLES + EXTRA_ROLES},
         "min_rest_hours_between_shifts": 12,
         "max_consecutive_work_days": 5,
         "max_weekly_hours": 40,
