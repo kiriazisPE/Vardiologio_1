@@ -187,7 +187,7 @@ def page_chatbot():
 
     command = st.text_input(" ", placeholder="π.χ. Ο Κώστας δε μπορεί να δουλέψει αύριο")
 
-    if st.button("💡 Εκτέλεση Εντολής"):
+    if st.button("💡 Εκτέλεση Εντολής", key="execute_command"):
         if "schedule_df" not in st.session_state:
             st.error("Δεν έχει δημιουργηθεί πρόγραμμα.")
             return
@@ -207,34 +207,36 @@ def page_chatbot():
             st.session_state.schedule_df = schedule_df[~mask].reset_index(drop=True)
             st.success(f"✅ Ο {name} αφαιρέθηκε από το πρόγραμμα για {date_str}.")
 
+    # ---- INTENT BASED ----
     user_input = st.text_input("Π.χ. Ο Γιώργος να μην δουλεύει Σάββατο βράδυ", key="chat_input")
 
-    if st.button("💡 Εκτέλεση Εντολής"):
+    if st.button("💡 Εκτέλεση Εντολής", key="execute_command_intent"):
         intent = classify_intent(user_input, intent_examples)
 
         if intent == "remove_from_schedule":
             st.success("🗓 Αναγνωρίστηκε: Εκτός προγράμματος")
-            # Κάνε την αντίστοιχη λογική εδώ
+            name, day = extract_name_and_day(user_input)
+            if name and day:
+                st.success(f"Ο {name} θα αφαιρεθεί από το πρόγραμμα την {day}")
+                # TODO: Αφαίρεση από schedule_df
+
         elif intent == "change_shift":
             st.info("🔁 Αναγνωρίστηκε: Αλλαγή βάρδιας")
+            # TODO: Λογική αλλαγής βάρδιας
+
         elif intent == "availability_change":
             st.warning("🔄 Αναγνωρίστηκε: Αλλαγή διαθεσιμότητας")
+            # TODO: Λογική αλλαγής διαθεσιμότητας
+
         elif intent == "add_day_off":
             st.warning("🌴 Αναγνωρίστηκε: Προσθήκη ρεπό")
+            name, days = extract_name_and_days(user_input)
+            if name and days:
+                st.warning(f"Ο {name} θα είναι εκτός για {days} ημέρες")
+                # TODO: Λογική αποκλεισμού πολλαπλών ημερών
+
         else:
             st.error("❌ Δεν αναγνωρίστηκε η κατηγορία εντολής.")
-
-    if intent == "remove_from_schedule":
-        name, day = extract_name_and_day(user_input)
-    if name and day:
-        st.success(f"Ο {name} θα αφαιρεθεί από το πρόγραμμα την {day}")
-        # Εδώ βάλε λογική για να τον αφαιρέσεις από το schedule_df
-
-    elif intent == "add_day_off":
-        name, days = extract_name_and_days(user_input)
-        if name and days:
-            st.warning(f"Ο {name} θα είναι εκτός για {days} ημέρες")
-            # Λογική αποκλεισμού πολλαπλών ημερών
 
 
 
