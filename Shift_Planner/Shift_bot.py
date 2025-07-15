@@ -206,7 +206,9 @@ def page_employees():
                     st.session_state.employees.append(employee_data)
                     st.success(f"✅ Ο υπάλληλος '{name}' προστέθηκε.")
                 st.session_state.edit_index = None
-                st.experimental_rerun()
+                st.session_state.rerun_trigger = True
+                st.stop()
+
 
     if st.session_state.employees:
         st.markdown("### Εγγεγραμμένοι Υπάλληλοι")
@@ -223,10 +225,14 @@ def page_employees():
                 with col2:
                     if st.button("✏️ Επεξεργασία", key=f"edit_{i}"):
                         st.session_state.edit_index = i
-                        st.experimental_rerun()
+                        st.session_state.rerun_trigger = True
+                        st.stop()
+
                     if st.button("🗑️ Διαγραφή", key=f"delete_{i}"):
                         del st.session_state.employees[i]
-                        st.experimental_rerun()
+                        st.session_state.rerun_trigger = True
+                        st.stop()
+
 
 # --- Page 3: Schedule Generation ---
 def page_schedule():
