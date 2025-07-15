@@ -130,13 +130,13 @@ def page_schedule():
         for i, day in enumerate(DAYS):
             date = (today + datetime.timedelta(days=i)).strftime("%d/%m/%Y")
             for shift in st.session_state.active_shifts:
-                for role in ROLES:
+                for role in st.session_state.roles:
                     count = 0
                     for e in st.session_state.employees:
                         if role in e["roles"] and shift in e["availability"]:
                             data.append({"Ημέρα": f"{day} ({date})", "Βάρδια": shift, "Υπάλληλος": e['name'], "Καθήκοντα": role})
                             count += 1
-                            if count >= st.session_state.rules["max_employees_per_position"][role]:
+                            if count >= st.session_state.rules["max_employees_per_position"].get(role, 1):
                                 break
                     coverage[day][shift][role] = count
         st.session_state.schedule = pd.DataFrame(data)
@@ -153,14 +153,13 @@ def page_schedule():
         for day, shifts in st.session_state.coverage.items():
             for shift, roles in shifts.items():
                 for role, count in roles.items():
-                    needed = st.session_state.rules["max_employees_per_position"][role]
+                    needed = st.session_state.rules["max_employees_per_position"].get(role, 1)
                     if count < needed:
                         uncovered.append({"Ημέρα": day, "Βάρδια": shift, "Ρόλος": role, "Ανεπάρκεια": needed - count})
         if uncovered:
             st.dataframe(pd.DataFrame(uncovered))
         else:
             st.success("🎉 Όλες οι θέσεις καλύφθηκαν.")
-
 # --- Page 4: Chatbot ---
 def page_chatbot():
     st.header("💬 Βοηθός Προγράμματος Βαρδιών")
