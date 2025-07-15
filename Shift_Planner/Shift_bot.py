@@ -154,17 +154,34 @@ def page_chatbot():
 # --- Page 2: Employees ---
 def page_employees():
     st.header("👥 Προσθήκη Υπαλλήλων")
+
+    # Διαγραφή με deferred δράση
+    if "to_delete_index" in st.session_state:
+        idx = st.session_state.to_delete_index
+        if 0 <= idx < len(st.session_state.employees):
+            del st.session_state.employees[idx]
+        del st.session_state["to_delete_index"]
+
     with st.form("employee_form"):
         name = st.text_input("Όνομα")
-        if "roles" not in st.session_state:
-            st.session_state.roles = DEFAULT_ROLES + EXTRA_ROLES
         roles = st.multiselect("Ρόλοι", st.session_state.roles)
         days_off = st.slider("Ρεπό ανά εβδομάδα", 1, 3, 2)
         availability = st.multiselect("Διαθεσιμότητα για όλες τις ημέρες", st.session_state.active_shifts)
         submitted = st.form_submit_button("➕ Προσθήκη")
-        if submitted and name:
-            st.session_state.employees.append({"name": name, "roles": roles, "days_off": days_off, "availability": availability})
-            st.success(f"Ο υπάλληλος {name} προστέθηκε.")
+
+        if submitted:
+            name_lower = name.strip().lower()
+            existing_names = [e["name"].strip().lower() for e in st.session_state.employees]
+            if name_lower in existing_names:
+                st.error(f"⚠️ Ο υπάλληλος '{name}' υπάρχει ήδη.")
+            elif name:
+                st.session_state.employees.append({
+                    "name": name.strip(),
+                    "roles": roles,
+                    "days_off": days_off,
+                    "availability": availability
+                })
+                st.success(f"Ο υπάλληλος {name} προστέθηκε.")
 
     if st.session_state.employees:
         st.markdown("### Εγγεγραμμένοι Υπάλληλοι")
@@ -176,9 +193,11 @@ def page_employees():
                 with col2:
                     if st.button("✏️ Επεξεργασία", key=f"edit_{i}"):
                         st.session_state.edit_index = i
+                        st.warning("✏️ Η επεξεργασία θα προστεθεί σύντομα.")
                     if st.button("🗑️ Διαγραφή", key=f"delete_{i}"):
-                        st.session_state.employees.pop(i)
-                        st.experimental_rerun()
+                        st.session_state.to_delete_index = i
+                        st.experimental_set_query_params()  # forces refresh χωρίς rerun
+                        st.stop()
 
 # --- Page 3: Schedule Generation ---
 def page_schedule():
