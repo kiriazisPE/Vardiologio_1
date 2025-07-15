@@ -185,6 +185,9 @@ def page_chatbot():
     st.markdown("Π.χ. Ο Κώστας δε μπορεί να δουλέψει αύριο")
 
     user_input = st.text_input("Εντολή", placeholder="π.χ. Ο Κώστας δε μπορεί να δουλέψει αύριο", key="chat_input")
+    if "schedule_df" not in st.session_state:
+        st.warning("📋 Δεν έχει δημιουργηθεί πρόγραμμα. Πήγαινε στη σελίδα 'Πρόγραμμα' για να δημιουργήσεις.")
+        return
 
     if st.button("💡 Εκτέλεση Εντολής", key="execute_command_intent"):
         if "schedule_df" not in st.session_state:
