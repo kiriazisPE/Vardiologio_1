@@ -29,9 +29,10 @@ def init_session():
     st.session_state.setdefault("requirements", defaultdict(lambda: defaultdict(int)))
     st.session_state.setdefault("schedule", pd.DataFrame())
     st.session_state.setdefault("chat_history", [])
+    st.session_state.setdefault("roles", DEFAULT_ROLES + EXTRA_ROLES)
     st.session_state.setdefault("rules", {
         "max_employees_per_shift": 5,
-        "max_employees_per_position": {role: 2 for role in DEFAULT_ROLES + EXTRA_ROLES},
+        "max_employees_per_position": {role: 2 for role in DEFAULT_ROLES},
         "min_rest_hours_between_shifts": 12,
         "max_consecutive_work_days": 5,
         "max_weekly_hours": 40,
@@ -89,6 +90,27 @@ def page_business():
             )
 
         st.success("✅ Οι ρυθμίσεις αποθηκεύτηκαν.")
+
+# --- Page 4: Chatbot Commands ---
+def page_chatbot():
+    st.header("🍊 Chatbot Εντολές")
+    st.markdown("Π.χ. Ο Γιώργος να μην δουλεύει Σάββατο βράδυ")
+
+    user_cmd = st.text_input("", "βγάλε τον asas από το πρόγραμμα την Τετάρτη (17/07/2025)")
+    if st.button("💡 Εκτέλεση Εντολής"):
+        df = st.session_state.schedule.copy()
+        target = "Τετάρτη (17/07/2025)"
+        name = "asas"
+
+        initial_len = len(df)
+        df = df[~((df["Ημέρα"] == target) & (df["Υπάλληλος"] == name))]
+        st.session_state.schedule = df.reset_index(drop=True)
+        st.success("✅ Εντολή ολοκληρώθηκε")
+        if len(df) < initial_len:
+            st.write("Αφαιρέθηκε ο υπάλληλος από το πρόγραμμα της Τετάρτης.")
+        else:
+            st.write("Ο υπάλληλος δεν βρέθηκε στο πρόγραμμα της Τετάρτης.")
+
 # --- Page 2: Employees ---
 def page_employees():
     st.header("👥 Προσθήκη Υπαλλήλων")
@@ -96,8 +118,7 @@ def page_employees():
         name = st.text_input("Όνομα")
         if "roles" not in st.session_state:
             st.session_state.roles = DEFAULT_ROLES + EXTRA_ROLES
-            roles = st.multiselect("Ρόλοι", st.session_state.roles)
-
+        roles = st.multiselect("Ρόλοι", st.session_state.roles)
         days_off = st.slider("Ρεπό ανά εβδομάδα", 1, 3, 2)
         availability = st.multiselect("Διαθεσιμότητα για όλες τις ημέρες", st.session_state.active_shifts)
         submitted = st.form_submit_button("➕ Προσθήκη")
@@ -109,13 +130,16 @@ def page_employees():
         st.markdown("### Εγγεγραμμένοι Υπάλληλοι")
         for i, emp in enumerate(st.session_state.employees):
             with st.expander(f"👤 {emp['name']}"):
-                st.write(emp)
-                col1, col2 = st.columns(2)
-                if col1.button("✏️ Επεξεργασία", key=f"edit_{i}"):
-                    st.session_state.edit_index = i
-                if col2.button("🗑️ Διαγραφή", key=f"delete_{i}"):
-                    st.session_state.employees.pop(i)
-                    st.experimental_rerun()
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.text(f"Ρόλοι: {', '.join(emp['roles'])}\nΡεπό: {emp['days_off']}\nΔιαθεσιμότητα: {', '.join(emp['availability'])}")
+                with col2:
+                    if st.button("✏️ Επεξεργασία", key=f"edit_{i}"):
+                        st.session_state.edit_index = i
+                    if st.button("🗑️ Διαγραφή", key=f"delete_{i}"):
+                        st.session_state.employees.pop(i)
+                        st.experimental_rerun()
+
 # --- Page 3: Schedule Generation ---
 def page_schedule():
     st.header("🧠 Δημιουργία Προγράμματος")
@@ -126,6 +150,7 @@ def page_schedule():
     if st.button("▶️ Δημιουργία Προγράμματος"):
         data = []
         coverage = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+        assigned = defaultdict(lambda: defaultdict(set))
         today = datetime.date.today()
         for i, day in enumerate(DAYS):
             date = (today + datetime.timedelta(days=i)).strftime("%d/%m/%Y")
@@ -134,7 +159,10 @@ def page_schedule():
                     count = 0
                     for e in st.session_state.employees:
                         if role in e["roles"] and shift in e["availability"]:
+                            if (shift, role) in assigned[day][e["name"]]:
+                                continue
                             data.append({"Ημέρα": f"{day} ({date})", "Βάρδια": shift, "Υπάλληλος": e['name'], "Καθήκοντα": role})
+                            assigned[day][e["name"]].add((shift, role))
                             count += 1
                             if count >= st.session_state.rules["max_employees_per_position"].get(role, 1):
                                 break
@@ -160,34 +188,6 @@ def page_schedule():
             st.dataframe(pd.DataFrame(uncovered))
         else:
             st.success("🎉 Όλες οι θέσεις καλύφθηκαν.")
-# --- Page 4: Chatbot ---
-def page_chatbot():
-    st.header("💬 Βοηθός Προγράμματος Βαρδιών")
-    if st.session_state.schedule.empty:
-        st.warning("⚠️ Δημιουργήστε πρώτα πρόγραμμα για να ξεκινήσει η συνομιλία.")
-        return
-
-    st.markdown("### 📅 Πρόγραμμα")
-    st.dataframe(st.session_state.schedule)
-
-    st.markdown("---")
-    st.markdown("### ✍️ Chatbot Εντολές")
-    prompt = st.text_input("Π.χ. Ο Γιώργος να μην δουλεύει Σάββατο βράδυ")
-    if st.button("💡 Εκτέλεση Εντολής") and prompt:
-        with st.spinner("🔍 Επεξεργασία εντολής..."):
-            try:
-                st.session_state.chat_history.append({"role": "user", "content": prompt})
-                response = client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[{"role": "system", "content": "Είσαι ένας βοηθός προγραμματισμού βαρδιών που κάνει αλλαγές στο πρόγραμμα."}] + st.session_state.chat_history
-                )
-                reply = response.choices[0].message.content
-                st.session_state.chat_history.append({"role": "assistant", "content": reply})
-                st.success("✅ Εντολή ολοκληρώθηκε")
-                st.markdown("**Απάντηση:**")
-                st.write(reply)
-            except Exception as e:
-                st.error(f"Σφάλμα κατά την κλήση OpenAI API: {e}")
 
 # --- Main ---
 def main():
