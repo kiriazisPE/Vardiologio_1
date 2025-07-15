@@ -6,11 +6,31 @@ from openai import OpenAI
 import os
 import re
 from dotenv import load_dotenv
+import json
+from pathlib import Path
+from difflib import SequenceMatcher
 
 
 # --- Load .env for API Key ---
 load_dotenv()
 client = OpenAI()
+
+# Φόρτωση intent examples
+intent_file = Path("intent_examples.json")
+with intent_file.open(encoding="utf-8") as f:
+    intent_examples = json.load(f)
+
+def classify_intent(user_input: str, examples: dict) -> str:
+    best_match = ("", 0.0)  # (intent, similarity_score)
+
+    for intent, phrases in examples.items():
+        for phrase in phrases:
+            score = SequenceMatcher(None, user_input.lower(), phrase.lower()).ratio()
+            if score > best_match[1]:
+                best_match = (intent, score)
+
+    return best_match[0] if best_match[1] > 0.5 else "unknown"
+
 
 # --- Page Config ---
 st.set_page_config(page_title="Βοηθός Προγράμματος Βαρδιών", layout="wide")
@@ -181,6 +201,37 @@ def page_chatbot():
         else:
             st.session_state.schedule_df = schedule_df[~mask].reset_index(drop=True)
             st.success(f"✅ Ο {name} αφαιρέθηκε από το πρόγραμμα για {date_str}.")
+
+    user_input = st.text_input("Π.χ. Ο Γιώργος να μην δουλεύει Σάββατο βράδυ", key="chat_input")
+
+    if st.button("💡 Εκτέλεση Εντολής"):
+        intent = classify_intent(user_input, intent_examples)
+
+        if intent == "remove_from_schedule":
+            st.success("🗓 Αναγνωρίστηκε: Εκτός προγράμματος")
+            # Κάνε την αντίστοιχη λογική εδώ
+        elif intent == "change_shift":
+            st.info("🔁 Αναγνωρίστηκε: Αλλαγή βάρδιας")
+        elif intent == "availability_change":
+            st.warning("🔄 Αναγνωρίστηκε: Αλλαγή διαθεσιμότητας")
+        elif intent == "add_day_off":
+            st.warning("🌴 Αναγνωρίστηκε: Προσθήκη ρεπό")
+        else:
+            st.error("❌ Δεν αναγνωρίστηκε η κατηγορία εντολής.")
+
+    if intent == "remove_from_schedule":
+        name, day = extract_name_and_day(user_input)
+    if name and day:
+        st.success(f"Ο {name} θα αφαιρεθεί από το πρόγραμμα την {day}")
+        # Εδώ βάλε λογική για να τον αφαιρέσεις από το schedule_df
+
+    elif intent == "add_day_off":
+        name, days = extract_name_and_days(user_input)
+        if name and days:
+            st.warning(f"Ο {name} θα είναι εκτός για {days} ημέρες")
+            # Λογική αποκλεισμού πολλαπλών ημερών
+
+
 
 # --- Page 2: Employees ---
 
