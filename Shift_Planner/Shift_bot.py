@@ -158,6 +158,9 @@ def page_employees():
     if "edit_index" not in st.session_state:
         st.session_state.edit_index = None
 
+    if "rerun" in st.session_state:
+        del st.session_state["rerun"]
+
     is_editing = st.session_state.edit_index is not None
 
     if is_editing:
@@ -181,7 +184,11 @@ def page_employees():
 
         if submitted:
             name_lower = name.strip().lower()
-            existing_names = [e["name"].strip().lower() for i, e in enumerate(st.session_state.employees) if i != st.session_state.edit_index]
+            existing_names = [
+                e["name"].strip().lower()
+                for i, e in enumerate(st.session_state.employees)
+                if i != st.session_state.edit_index
+            ]
 
             if name_lower in existing_names:
                 st.error(f"⚠️ Ο υπάλληλος '{name}' υπάρχει ήδη.")
@@ -199,6 +206,8 @@ def page_employees():
                 else:
                     st.session_state.employees.append(employee_data)
                     st.success(f"✅ Ο υπάλληλος '{name}' προστέθηκε.")
+                st.session_state.rerun = True
+                st.stop()
 
     if st.session_state.employees:
         st.markdown("### Εγγεγραμμένοι Υπάλληλοι")
@@ -206,14 +215,16 @@ def page_employees():
             with st.expander(f"👤 {emp['name']}"):
                 col1, col2 = st.columns([3, 1])
                 with col1:
-                    st.text(f"Ρόλοι: {', '.join(emp['roles'])}\nΡεπό: {emp['days_off']}\nΔιαθεσιμότητα: {', '.join(emp['availability'])}")
+                    st.text(f"Ρόλοι: {', '.join(emp['roles'])}\\nΡεπό: {emp['days_off']}\\nΔιαθεσιμότητα: {', '.join(emp['availability'])}")
                 with col2:
                     if st.button("✏️ Επεξεργασία", key=f"edit_{i}"):
                         st.session_state.edit_index = i
-                        st.experimental_rerun()
+                        st.session_state.rerun = True
+                        st.stop()
                     if st.button("🗑️ Διαγραφή", key=f"delete_{i}"):
                         del st.session_state.employees[i]
-                        st.experimental_rerun()
+                        st.session_state.rerun = True
+                        st.stop()
 
 # --- Page 3: Schedule Generation ---
 def page_schedule():
