@@ -94,7 +94,10 @@ def page_employees():
     st.header("👥 Προσθήκη Υπαλλήλων")
     with st.form("employee_form"):
         name = st.text_input("Όνομα")
-        roles = st.multiselect("Ρόλοι", st.session_state.roles)
+        if "roles" not in st.session_state:
+            st.session_state.roles = DEFAULT_ROLES + EXTRA_ROLES
+            roles = st.multiselect("Ρόλοι", st.session_state.roles)
+
         days_off = st.slider("Ρεπό ανά εβδομάδα", 1, 3, 2)
         availability = st.multiselect("Διαθεσιμότητα για όλες τις ημέρες", st.session_state.active_shifts)
         submitted = st.form_submit_button("➕ Προσθήκη")
