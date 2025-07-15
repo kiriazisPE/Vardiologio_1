@@ -94,18 +94,39 @@ def page_business():
 
 # --- Page 4: Chatbot Commands ---
 def extract_name_and_date(cmd):
-    match = re.search(r"βγ(άλε|άζεις)?.*τον\\s+(.*?)\\s+.*?(Δευτέρα|Τρίτη|Τετάρτη|Πέμπτη|Παρασκευή|Σάββατο|Κυριακή)\\s*\\((\\d{2}/\\d{2}/\\d{4})\\)", cmd)
-    if match:
-        name = match.group(2).strip()
-        day_str = f"{match.group(3)} ({match.group(4)})"
+    # Παράδειγμα: "βγάλε τον Γιώργο από το πρόγραμμα την Τρίτη (16/07/2025)"
+    date_pattern = re.search(r"βγ(άλε|άζεις)?.*τον\s+(.*?)\s+.*?(Δευτέρα|Τρίτη|Τετάρτη|Πέμπτη|Παρασκευή|Σάββατο|Κυριακή)\s*\((\d{2}/\d{2}/\d{4})\)", cmd, re.IGNORECASE)
+    if date_pattern:
+        name = date_pattern.group(2).strip()
+        day_str = f"{date_pattern.group(3)} ({date_pattern.group(4)})"
         return name, day_str
+
+    # Παράδειγμα: "βγάλε τον Νίκο από όλες τις Κυριακές"
+    recurring_pattern = re.search(r"βγ(άλε|άζεις)?.*τον\s+(.*?)\s+.*όλες τις\s+(Δευτέρες|Τρίτες|Τετάρτες|Πέμπτες|Παρασκευές|Σάββατα|Κυριακές)", cmd, re.IGNORECASE)
+    if recurring_pattern:
+        name = recurring_pattern.group(2).strip()
+        weekday_plural = recurring_pattern.group(3).strip().lower()
+
+        mapping = {
+            "δευτέρες": "Δευτέρα",
+            "τρίτες": "Τρίτη",
+            "τετάρτες": "Τετάρτη",
+            "πέμπτες": "Πέμπτη",
+            "παρασκευές": "Παρασκευή",
+            "σάββατα": "Σάββατο",
+            "κυριακές": "Κυριακή"
+        }
+
+        if weekday_plural in mapping:
+            return name, mapping[weekday_plural]
+
     return None, None
 
 def page_chatbot():
     st.header("🍊 Chatbot Εντολές")
     st.markdown("Π.χ. Ο Γιώργος να μην δουλεύει Σάββατο βράδυ")
 
-    user_cmd = st.text_input("", "βγάλε τον asas από το πρόγραμμα την Τετάρτη (17/07/2025)")
+    user_cmd = st.text_input("", "βγάλε τον asas από όλες τις Κυριακές")
     if st.button("💡 Εκτέλεση Εντολής"):
         name, target = extract_name_and_date(user_cmd)
         if not name or not target:
@@ -114,14 +135,21 @@ def page_chatbot():
 
         df = st.session_state.schedule.copy()
         initial_len = len(df)
-        df = df[~((df["Ημέρα"] == target) & (df["Υπάλληλος"] == name))]
+
+        if "(" in target:
+            # Συγκεκριμένη ημερομηνία
+            df = df[~((df["Ημέρα"] == target) & (df["Υπάλληλος"] == name))]
+        else:
+            # Επαναλαμβανόμενη ημέρα, π.χ. "Κυριακή"
+            df = df[~((df["Ημέρα"].str.startswith(target)) & (df["Υπάλληλος"] == name))]
+
         st.session_state.schedule = df.reset_index(drop=True)
 
         st.success("✅ Εντολή ολοκληρώθηκε")
         if len(df) < initial_len:
-            st.write(f"Αφαιρέθηκε ο υπάλληλος **{name}** από το πρόγραμμα της **{target}**.")
+            st.write(f"Αφαιρέθηκε ο υπάλληλος **{name}** από το πρόγραμμα για **{target}**.")
         else:
-            st.write(f"Ο υπάλληλος **{name}** δεν βρέθηκε στο πρόγραμμα της **{target}**.")
+            st.write(f"Ο υπάλληλος **{name}** δεν βρέθηκε στο πρόγραμμα για **{target}**.")
 
 # --- Page 2: Employees ---
 def page_employees():
