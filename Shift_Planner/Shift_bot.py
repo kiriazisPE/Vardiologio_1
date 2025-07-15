@@ -127,29 +127,31 @@ def page_business():
         st.success("✅ Οι ρυθμίσεις αποθηκεύτηκαν.")
 
 # --- Page 4: Chatbot Commands ---
-def extract_name_and_date(cmd):
-    import re
+def extract_name_and_day(text):
+    name_match = re.search(r"(ο|η)?\s*([Α-Ωα-ωίϊΐόάέύϋΰήώΑ-Ζ]+)", text)
+    name = name_match.group(2) if name_match else None
 
-    # Μορφή: "βγάλε τον <όνομα> από το πρόγραμμα την <Ημέρα> (<Ημερομηνία>)"
-    m1 = re.search(r"βγ(άλε|άζεις)?.*τον\s+(.*?)\s+.*?(Δευτέρα|Τρίτη|Τετάρτη|Πέμπτη|Παρασκευή|Σάββατο|Κυριακή)\s*\((\d{2}/\d{2}/\d{4})\)", cmd, re.IGNORECASE)
-    if m1:
-        name = m1.group(2).strip()
-        day_str = f"{m1.group(3)} ({m1.group(4)})"
-        return name, day_str
+    # Αναγνώριση σχετικών ημερών
+    for word, offset in relative_keywords.items():
+        if word in text:
+            target_date = datetime.now() + timedelta(days=offset)
+            weekday = greek_weekdays[target_date.weekday()]
+            return name, f"{weekday} ({target_date.strftime('%d/%m/%Y')})"
 
-    # Μορφή: "ο <όνομα> δε μπορεί να δουλέψει την <Ημέρα> (<Ημερομηνία>)"
-    m2 = re.search(r"ο\s+(.*?)\s+(δεν|δε)\s+μπορεί\s+να\s+δουλέψει\s+την\s+(Δευτέρα|Τρίτη|Τετάρτη|Πέμπτη|Παρασκευή|Σάββατο|Κυριακή)\s*\((\d{2}/\d{2}/\d{4})\)", cmd, re.IGNORECASE)
-    if m2:
-        name = m2.group(1).strip()
-        day_str = f"{m2.group(3)} ({m2.group(4)})"
-        return name, day_str
+    # Νέα προσθήκη: εύρεση εύρους ημερών (π.χ. 10 μέρες)
+    match_days = re.search(r"επόμεν(ες|ους)? (\d{1,2}) μέρ", text)
+    if match_days:
+        num_days = int(match_days.group(2))
+        dates = []
+        for i in range(num_days):
+            target_date = datetime.now() + timedelta(days=i)
+            weekday = greek_weekdays[target_date.weekday()]
+            dates.append(f"{weekday} ({target_date.strftime('%d/%m/%Y')})")
+        return name, dates
 
-    # Μορφή: "η <όνομα> έχει ρεπό την <Ημέρα> (<Ημερομηνία>)"
-    m3 = re.search(r"η\s+(.*?)\s+έχει\s+ρεπό\s+την\s+(Δευτέρα|Τρίτη|Τετάρτη|Πέμπτη|Παρασκευή|Σάββατο|Κυριακή)\s*\((\d{2}/\d{2}/\d{4})\)", cmd, re.IGNORECASE)
-    if m3:
-        name = m3.group(1).strip()
-        day_str = f"{m3.group(2)} ({m3.group(3)})"
-        return name, day_str
+    date_match = re.search(combined_date_pattern, text)
+    if date_match:
+        return name, date_match.group()
 
     return None, None
 
