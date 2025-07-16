@@ -380,18 +380,20 @@ def page_employees():
 def page_schedule():
     st.header("🧠 Δημιουργία Προγράμματος")
     
+    # Check if employees exist
     if not st.session_state.employees:
         st.warning("Προσθέστε πρώτα υπαλλήλους.")
         return
 
+    # Button to generate the schedule
     if st.button("▶️ Δημιουργία Προγράμματος"):
         data = []
         coverage = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
         assigned = defaultdict(lambda: defaultdict(set))
         today = datetime.date.today()
-        assignment_count = defaultdict(int)
 
-        uncovered = []  # 🟡 για μη καλυμμένες θέσεις
+        # Μετρητής αναθέσεων για ισορροπία
+        assignment_count = defaultdict(int)
 
         for i, day in enumerate(DAYS):
             date = (today + datetime.timedelta(days=i)).strftime("%d/%m/%Y")
@@ -400,15 +402,18 @@ def page_schedule():
                     needed = st.session_state.rules["max_employees_per_position"].get(role, 1)
                     count = 0
 
+                    # Φιλτράρισμα υπαλλήλων με βάση διαθεσιμότητα και ρόλο
                     eligible_employees = [
                         e for e in st.session_state.employees
                         if role in e["roles"] and shift in e["availability"]
                     ]
 
+                    # Ταξινόμηση με βάση πόσες φορές έχουν ήδη ανατεθεί
                     sorted_employees = sorted(eligible_employees, key=lambda e: assignment_count[e["name"]])
 
                     for e in sorted_employees:
                         name = e["name"]
+                        # Αποφυγή διπλής ανάθεσης σε ίδια βάρδια/ρόλο
                         if (shift, role) in assigned[day][name]:
                             continue
                         data.append({
