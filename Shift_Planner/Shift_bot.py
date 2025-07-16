@@ -24,7 +24,18 @@ if not intent_file.exists():
     intent_examples = []
 else:
     with intent_file.open(encoding="utf-8") as f:
-        intent_examples = json.load(f)
+        content = f.read()
+        if not content.strip():
+            raise ValueError("❌ Το αρχείο intent_examples.json είναι κενό ή περιέχει μόνο κενά.")
+        
+        try:
+            intent_examples = json.loads(content)
+        except json.JSONDecodeError as e:
+            print("❌ Σφάλμα στο JSON:", e)
+            print("➡️ Πρώτα 300 χαρακτήρες:")
+            print(content[:300])
+            raise e
+
 
 def classify_intent(user_input: str, examples: dict) -> str:
     best_match = ("", 0.0)  # (intent, similarity_score)
