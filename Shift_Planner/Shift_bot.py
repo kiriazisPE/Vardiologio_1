@@ -96,24 +96,24 @@ def navigation():
 def page_business():
     """Business setup page."""
     st.header("🏢 Ρυθμίσεις Επιχείρησης")
-    st.session_state.business_name = st.text_input("Εισάγετε το όνομα της επιχείρησης", st.session_state.business_name)
+    st.session_state.business_name = st.text_input("Εισάγετε το όνομα της επιχείρησης", st.session_state.business_name, help="Προσθέστε το όνομα της επιχείρησης σας.")
 
     st.markdown("### 📆 Επιλέξτε ενεργές βάρδιες")
-    st.session_state.active_shifts = st.multiselect("Βάρδιες που χρησιμοποιεί η επιχείρηση", ALL_SHIFTS, default=st.session_state.active_shifts)
+    st.session_state.active_shifts = st.multiselect("Βάρδιες που χρησιμοποιεί η επιχείρηση", ALL_SHIFTS, default=st.session_state.active_shifts, help="Επιλέξτε τις βάρδιες που ισχύουν για την επιχείρηση σας.")
 
     st.markdown("### 🧱 Επιλογή Ρόλων Επιχείρησης")
-    st.session_state.roles = st.multiselect("Επιλέξτε ρόλους που απαιτούνται στην επιχείρηση", DEFAULT_ROLES + EXTRA_ROLES, default=DEFAULT_ROLES)
+    st.session_state.roles = st.multiselect("Επιλέξτε ρόλους που απαιτούνται στην επιχείρηση", DEFAULT_ROLES + EXTRA_ROLES, default=DEFAULT_ROLES, help="Προσθέστε ή αφαιρέστε ρόλους ανάλογα με τις ανάγκες σας.")
 
     st.markdown("### 🛠️ Κανόνες Επιχείρησης")
     with st.expander("👥 Μέγιστος αριθμός υπαλλήλων ανά βάρδια"):
         st.session_state.rules["max_employees_per_shift"] = st.number_input(
-            "Μέγιστος αριθμός", min_value=1, max_value=20, value=st.session_state.rules["max_employees_per_shift"]
+            "Μέγιστος αριθμός", min_value=1, max_value=20, value=st.session_state.rules["max_employees_per_shift"], help="Ορίστε τον μέγιστο αριθμό υπαλλήλων ανά βάρδια."
         )
 
     for role in st.session_state.roles:
         with st.expander(f"👤 Μέγιστοι {role} ανά βάρδια"):
             st.session_state.rules["max_employees_per_position"][role] = st.number_input(
-                f"{role}", min_value=0, max_value=10, value=st.session_state.rules["max_employees_per_position"].get(role, 2), key=f"role_{role}"
+                f"{role}", min_value=0, max_value=10, value=st.session_state.rules["max_employees_per_position"].get(role, 2), key=f"role_{role}", help=f"Ορίστε τον μέγιστο αριθμό υπαλλήλων για τον ρόλο '{role}'."
             )
 
     # AI Validation for Business Rules
@@ -127,10 +127,10 @@ def page_employees():
     st.header("👥 Προσθήκη ή Επεξεργασία Υπαλλήλων")
 
     with st.form("employee_form"):
-        name = st.text_input("Όνομα")
-        roles = st.multiselect("Ρόλοι", st.session_state.roles)
-        days_off = st.slider("Ρεπό ανά εβδομάδα", 1, 3, 2)
-        availability = st.multiselect("Διαθεσιμότητα για όλες τις ημέρες", st.session_state.active_shifts)
+        name = st.text_input("Όνομα", help="Προσθέστε το όνομα του υπαλλήλου.")
+        roles = st.multiselect("Ρόλοι", st.session_state.roles, help="Επιλέξτε τους ρόλους που μπορεί να αναλάβει ο υπάλληλος.")
+        days_off = st.slider("Ρεπό ανά εβδομάδα", 1, 3, 2, help="Ορίστε τον αριθμό των ρεπό ανά εβδομάδα.")
+        availability = st.multiselect("Διαθεσιμότητα για όλες τις ημέρες", st.session_state.active_shifts, help="Επιλέξτε τις βάρδιες που είναι διαθέσιμος ο υπάλληλος.")
         submitted = st.form_submit_button("💾 Αποθήκευση")
 
         if submitted and name:
@@ -201,7 +201,7 @@ def page_chatbot():
         st.warning("📋 Δεν έχει δημιουργηθεί πρόγραμμα. Πήγαινε στη σελίδα 'Πρόγραμμα' για να δημιουργήσεις.")
         return
 
-    user_input = st.text_input("Γράψε την εντολή σου εδώ...", placeholder="Π.χ. Ο Κώστας δε μπορεί να δουλέψει αύριο")
+    user_input = st.text_input("Γράψε την εντολή σου εδώ...", placeholder="Π.χ. Ο Κώστας δε μπορεί να δουλέψει αύριο", help="Προσθέστε μια εντολή για να επεξεργαστεί το πρόγραμμα.")
     if st.button("💡 Εκτέλεση Εντολής"):
         result = process_with_ai(user_input, context=json.dumps(st.session_state.schedule.to_dict()))
         if "error" in result:
