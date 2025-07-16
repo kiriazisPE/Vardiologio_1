@@ -116,7 +116,6 @@ def init_session():
     st.session_state.setdefault("page", 0)
     st.session_state.setdefault("business_name", "")
     st.session_state.setdefault("active_shifts", ALL_SHIFTS[:2])
-    st.session_state.setdefault("employees", [])
     st.session_state.setdefault("edit_index", None)
     st.session_state.setdefault("requirements", defaultdict(lambda: defaultdict(int)))
     st.session_state.setdefault("schedule", pd.DataFrame())
@@ -131,6 +130,40 @@ def init_session():
     })
     st.session_state.setdefault("business_stage", 1)
 
+
+ if "employees" not in st.session_state or not st.session_state.employees:
+        st.session_state.employees = [
+            {
+                "name": "Μπάμπης",
+                "roles": ["Ταμείο"],
+                "days_off": 2,
+                "availability": ["Πρωί", "Απόγευμα"]
+            },
+            {
+                "name": "Αλέξης",
+                "roles": ["Σερβιτόρος"],
+                "days_off": 2,
+                "availability": ["Πρωί", "Βράδυ"]
+            },
+            {
+                "name": "Τάσος",
+                "roles": ["Μάγειρας"],
+                "days_off": 2,
+                "availability": ["Απόγευμα", "Βράδυ"]
+            },
+            {
+                "name": "Πέτρος",
+                "roles": ["Barista"],
+                "days_off": 2,
+                "availability": ["Πρωί"]
+            },
+            {
+                "name": "Άλκης",
+                "roles": ["Καθαριστής"],
+                "days_off": 2,
+                "availability": ["Απόγευμα"]
+            }
+        ]
 # --- Navigation ---
 def navigation():
     st.sidebar.title("🔁 Πλοήγηση")
@@ -484,35 +517,3 @@ def main():
 if __name__ == "__main__":
     main()
 
-st.session_state.employees = [
-    {
-        "name": "Μπάμπης",
-        "roles": ["Ταμείο"],
-        "days_off": 2,
-        "availability": ["Πρωί", "Απόγευμα"]
-    },
-    {
-        "name": "Αλέξης",
-        "roles": ["Σερβιτόρος"],
-        "days_off": 2,
-        "availability": ["Πρωί", "Βράδυ"]
-    },
-    {
-        "name": "Τάσος",
-        "roles": ["Μάγειρας"],
-        "days_off": 2,
-        "availability": ["Απόγευμα", "Βράδυ"]
-    },
-    {
-        "name": "Πέτρος",
-        "roles": ["Barista"],
-        "days_off": 2,
-        "availability": ["Πρωί"]
-    },
-    {
-        "name": "Άλκης",
-        "roles": ["Καθαριστής"],
-        "days_off": 2,
-        "availability": ["Απόγευμα"]
-    }
-]
