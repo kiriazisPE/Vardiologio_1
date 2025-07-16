@@ -76,43 +76,11 @@ DAYS = ["Δευτέρα", "Τρίτη", "Τετάρτη", "Πέμπτη", "Πα�
 ALL_SHIFTS = ["Πρωί", "Απόγευμα", "Βράδυ"]
 DEFAULT_ROLES = ["Ταμείο", "Σερβιτόρος", "Μάγειρας", "Barista"]
 EXTRA_ROLES = ["Υποδοχή", "Καθαριστής", "Λαντζέρης", "Οδηγός", "Manager"]
-
-greek_weekdays = [
-    "Δευτέρα", "Τρίτη", "Τετάρτη", "Πέμπτη",
-    "Παρασκευή", "Σάββατο", "Κυριακή"
-]
-
-unavailability_phrases = [
-    r"δε(ν)? μπορεί",
-    r"δεν θα δουλέψει",
-    r"έχει ρεπό",
-    r"λείπει",
-    r"δεν είναι διαθέσιμ",
-    r"είναι άρρωσ",
-    r"χτύπησε",
-    r"τραυματίστηκε",
-    r"αρρώστησε"
-]
-
-relative_keywords = {
-    "αύριο": 1,
-    "μεθαύριο": 2
-}
-
-# Regex που πιάνει και πληθυντικούς
-day_pattern = r"(δευτέρα(?:ς|ες)?|τρίτη(?:ς|ες)?|τετάρτη(?:ς|ες)?|πέμπτη(?:ς|ες)?|παρασκευή(?:ς|ες)?|σάββατο(?:υ|α)?|κυριακή(?:ς|ες)?)"
-date_pattern = r"\d{2}/\d{2}/\d{4}"
-combined_date_pattern = fr"{day_pattern} ({{date_pattern}})"
-
-
-
-
-
-
-
+GREEK_WEEKDAYS = DAYS
 
 # --- Session State Initialization ---
 def init_session():
+    """Initialize session state variables."""
     st.session_state.setdefault("page", 0)
     st.session_state.setdefault("business_name", "")
     st.session_state.setdefault("active_shifts", ALL_SHIFTS[:2])
@@ -128,49 +96,18 @@ def init_session():
         "max_consecutive_work_days": 5,
         "max_weekly_hours": 40,
     })
-    st.session_state.setdefault("business_stage", 1)
+    st.session_state.setdefault("employees", [])
 
-    if "employees" not in st.session_state or not st.session_state.employees:
-        st.session_state.employees = [
-            {
-                "name": "Μπάμπης",
-                "roles": ["Ταμείο"],
-                "days_off": 2,
-                "availability": ["Πρωί", "Απόγευμα"]
-            },
-            {
-                "name": "Αλέξης",
-                "roles": ["Σερβιτόρος"],
-                "days_off": 2,
-                "availability": ["Πρωί", "Βράδυ"]
-            },
-            {
-                "name": "Τάσος",
-                "roles": ["Μάγειρας"],
-                "days_off": 2,
-                "availability": ["Απόγευμα", "Βράδυ"]
-            },
-            {
-                "name": "Πέτρος",
-                "roles": ["Barista"],
-                "days_off": 2,
-                "availability": ["Πρωί"]
-            },
-            {
-                "name": "Άλκης",
-                "roles": ["Καθαριστής"],
-                "days_off": 2,
-                "availability": ["Απόγευμα"]
-            }
-        ]
 # --- Navigation ---
 def navigation():
+    """Handle page navigation."""
     st.sidebar.title("🔁 Πλοήγηση")
     choice = st.sidebar.radio("Μενού", ["1️⃣ Επιχείρηση", "2️⃣ Υπάλληλοι", "3️⃣ Πρόγραμμα", "4️⃣ Chatbot"])
     st.session_state.page = ["1️⃣ Επιχείρηση", "2️⃣ Υπάλληλοι", "3️⃣ Πρόγραμμα", "4️⃣ Chatbot"].index(choice)
 
 # --- Page 1: Business Setup ---
 def page_business():
+    """Business setup page."""
     st.header("🏢 Ρυθμίσεις Επιχείρησης")
 
     if st.session_state.business_stage == 1:
@@ -186,94 +123,38 @@ def page_business():
         st.session_state.roles = st.multiselect("Επιλέξτε ρόλους που απαιτούνται στην επιχείρηση", DEFAULT_ROLES + EXTRA_ROLES, default=DEFAULT_ROLES)
 
         st.markdown("### 🛠️ Κανόνες Επιχείρησης")
-
-        with st.expander("👥 Μέγιστος αριθμός υπαλλήλων ανά βάρδια"):
-            st.session_state.rules["max_employees_per_shift"] = st.number_input(
-                "Μέγιστος αριθμός", min_value=1, max_value=20, value=st.session_state.rules["max_employees_per_shift"]
-            )
-
-        for role in st.session_state.roles:
-            with st.expander(f"👤 Μέγιστοι {role} ανά βάρδια"):
-                st.session_state.rules["max_employees_per_position"][role] = st.number_input(
-                    f"{role}", min_value=0, max_value=10, value=st.session_state.rules["max_employees_per_position"].get(role, 2), key=f"role_{role}"
-                )
-
-        with st.expander("⏱️ Ελάχιστες ώρες ξεκούρασης μεταξύ βαρδιών"):
-            st.session_state.rules["min_rest_hours_between_shifts"] = st.number_input(
-                "Ελάχιστες ώρες", min_value=0, max_value=24, value=st.session_state.rules["min_rest_hours_between_shifts"]
-            )
-
-        with st.expander("📅 Μέγιστες συνεχόμενες μέρες εργασίας"):
-            st.session_state.rules["max_consecutive_work_days"] = st.number_input(
-                "Ημέρες", min_value=1, max_value=7, value=st.session_state.rules["max_consecutive_work_days"]
-            )
-
-        with st.expander("⏳ Μέγιστες ώρες εργασίας την εβδομάδα"):
-            st.session_state.rules["max_weekly_hours"] = st.number_input(
-                "Ώρες", min_value=1, max_value=80, value=st.session_state.rules["max_weekly_hours"]
-            )
+        setup_business_rules()
 
         st.success("✅ Οι ρυθμίσεις αποθηκεύτηκαν.")
 
+def setup_business_rules():
+    """Setup business rules."""
+    with st.expander("👥 Μέγιστος αριθμός υπαλλήλων ανά βάρδια"):
+        st.session_state.rules["max_employees_per_shift"] = st.number_input(
+            "Μέγιστος αριθμός", min_value=1, max_value=20, value=st.session_state.rules["max_employees_per_shift"]
+        )
 
+    for role in st.session_state.roles:
+        with st.expander(f"👤 Μέγιστοι {role} ανά βάρδια"):
+            st.session_state.rules["max_employees_per_position"][role] = st.number_input(
+                f"{role}", min_value=0, max_value=10, value=st.session_state.rules["max_employees_per_position"].get(role, 2), key=f"role_{role}"
+            )
 
+    with st.expander("⏱️ Ελάχιστες ώρες ξεκούρασης μεταξύ βαρδιών"):
+        st.session_state.rules["min_rest_hours_between_shifts"] = st.number_input(
+            "Ελάχιστες ώρες", min_value=0, max_value=24, value=st.session_state.rules["min_rest_hours_between_shifts"]
+        )
 
+    with st.expander("📅 Μέγιστες συνεχόμενες μέρες εργασίας"):
+        st.session_state.rules["max_consecutive_work_days"] = st.number_input(
+            "Ημέρες", min_value=1, max_value=7, value=st.session_state.rules["max_consecutive_work_days"]
+        )
 
-day_pattern = r"(δευτέρα(?:ς|ες)?|τρίτη(?:ς|ες)?|τετάρτη(?:ς|ες)?|πέμπτη(?:ς|ες)?|παρασκευή(?:ς|ες)?|σάββατο(?:υ|α)?|κυριακή(?:ς|ες)?)"
-date_pattern = r"\d{2}/\d{2}/\d{4}"
-combined_date_pattern = fr"{day_pattern} ({{date_pattern}})"
+    with st.expander("⏳ Μέγιστες ώρες εργασίας την εβδομάδα"):
+        st.session_state.rules["max_weekly_hours"] = st.number_input(
+            "Ώρες", min_value=1, max_value=80, value=st.session_state.rules["max_weekly_hours"]
+        )
 
-def match_employee_name(user_input: str, schedule_df: pd.DataFrame) -> str:
-    all_names = schedule_df['Υπάλληλος'].unique()
-    for name in all_names:
-        if name.lower() in user_input.lower():
-            return name
-    return None
-
-def extract_name_and_day(user_input: str, schedule_df: pd.DataFrame):
-    text = user_input.lower()
-    name = match_employee_name(user_input, schedule_df)
-    
-    # Check for specific days in plural form first
-    day_plural_map = {
-        "δευτέρες": "Δευτέρα",
-        "τρίτες": "Τρίτη",
-        "τετάρτες": "Τετάρτη",
-        "πέμπτες": "Πέμπτη",
-        "παρασκευές": "Παρασκευή",
-        "σάββατα": "Σάββατο",
-        "κυριακές": "Κυριακή"
-    }
-    
-    # First check for plural forms
-    for plural, singular in day_plural_map.items():
-        if plural in text:
-            return name, singular
-    
-    # Then check for singular forms with their variations
-    day_pattern = r"(δευτέρα|τρίτη|τετάρτη|πέμπτη|παρασκευή|σάββατο|κυριακή)"
-    date_match = re.search(day_pattern, text)
-    if date_match:
-        day = date_match.group(1)
-        day_map = {
-            "δευτέρα": "Δευτέρα",
-            "τρίτη": "Τρίτη",
-            "τετάρτη": "Τετάρτη",
-            "πέμπτη": "Πέμπτη",
-            "παρασκευή": "Παρασκευή",
-            "σάββατο": "Σάββατο",
-            "κυριακή": "Κυριακή"
-        }
-        return name, day_map.get(day, day.capitalize())
-    
-    # Check for relative days (αύριο, μεθαύριο)
-    for word, offset in relative_keywords.items():
-        if word in text:
-            target_date = datetime.datetime.now() + datetime.timedelta(days=offset)
-            weekday = greek_weekdays[target_date.weekday()]
-            return name, f"{weekday} ({target_date.strftime('%d/%m/%Y')})"
-
-    return name, None
 # --- Page 4: Chatbot Commands --
 def page_chatbot():
     st.title("🍊 Chatbot Εντολές")
@@ -507,6 +388,7 @@ def page_schedule():
 
 # --- Main ---
 def main():
+    """Main function to run the app."""
     init_session()
     navigation()
     page_funcs = [page_business, page_employees, page_schedule, page_chatbot]
