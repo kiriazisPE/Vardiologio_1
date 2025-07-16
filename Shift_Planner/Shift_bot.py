@@ -209,6 +209,12 @@ def page_chatbot():
     st.title("🍊 Chatbot Εντολές")
     st.markdown("Π.χ. Ο Κώστας δε μπορεί να δουλέψει αύριο")
     user_input = st.text_input("Εντολή", placeholder="π.χ. Ο Κώστας δε μπορεί να δουλέψει αύριο", key="chat_input")
+    
+    # Αρχικοποίηση του intent
+    intent = None
+    schedule_df = st.session_state.schedule
+    name = None
+    day = None
 
     if "schedule" not in st.session_state or st.session_state.schedule.empty:
         st.warning("📋 Δεν έχει δημιουργηθεί πρόγραμμα. Πήγαινε στη σελίδα 'Πρόγραμμα' για να δημιουργήσεις.")
@@ -216,10 +222,7 @@ def page_chatbot():
 
     if st.button("💡 Εκτέλεση Εντολής", key="execute_command_intent"):
         intent = classify_intent(user_input, intent_examples)
-        schedule_df = st.session_state.schedule
         name, day = extract_name_and_day(user_input, schedule_df)
-
-        # ...existing bot logic...
 
     # Εμφάνιση προγράμματος πάντα κάτω από το bot
     st.markdown("### 📋 Πρόγραμμα Βαρδιών")
