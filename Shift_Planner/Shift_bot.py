@@ -109,6 +109,10 @@ def navigation():
 def page_business():
     """Business setup page."""
     st.header("🏢 Ρυθμίσεις Επιχείρησης")
+    
+    if "business_stage" not in st.session_state:
+        st.session_state.business_stage = 1  # fallback default
+
 
     if st.session_state.business_stage == 1:
         st.session_state.business_name = st.text_input("Εισάγετε το όνομα της επιχείρησης", st.session_state.business_name)
@@ -401,5 +405,6 @@ def main():
 
 
 if __name__ == "__main__":
+    init_session()
     main()
 
