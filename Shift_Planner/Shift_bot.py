@@ -295,6 +295,83 @@ def page_chatbot():
             st.error(f"❌ Σφάλμα: {str(e)}")
             return
 
+# --- Page 2: Employees ---
+def page_employees():
+    st.header("👥 Προσθήκη ή Επεξεργασία Υπαλλήλων")
+
+    # Initialize edit_index if not already set
+    if "edit_index" not in st.session_state:
+        st.session_state.edit_index = None
+
+    is_editing = st.session_state.edit_index is not None
+
+    # Default values for employee form
+    if is_editing:
+        emp = st.session_state.employees[st.session_state.edit_index]
+        default_name = emp["name"]
+        default_roles = emp["roles"]
+        default_days_off = emp["days_off"]
+        default_availability = emp["availability"]
+    else:
+        default_name = ""
+        default_roles = []
+        default_days_off = 2
+        default_availability = []
+
+    with st.form("employee_form"):
+        name = st.text_input("Όνομα", value=default_name)
+        roles = st.multiselect("Ρόλοι", st.session_state.roles, default=default_roles)
+        days_off = st.slider("Ρεπό ανά εβδομάδα", 1, 3, default_days_off)
+        availability = st.multiselect("Διαθεσιμότητα για όλες τις ημέρες", st.session_state.active_shifts, default=default_availability)
+        submitted = st.form_submit_button("💾 Αποθήκευση")
+
+        if submitted:
+            name_lower = name.strip().lower()
+            existing_names = [
+                e["name"].strip().lower()
+                for i, e in enumerate(st.session_state.employees)
+                if i != st.session_state.edit_index
+            ]
+
+            if name_lower in existing_names:
+                st.error(f"⚠️ Ο υπάλληλος '{name}' υπάρχει ήδη.")
+            elif name:
+                employee_data = {
+                    "name": name.strip(),
+                    "roles": roles,
+                    "days_off": days_off,
+                    "availability": availability
+                }
+                if is_editing:
+                    st.session_state.employees[st.session_state.edit_index] = employee_data
+                    st.success(f"✅ Ο υπάλληλος '{name}' ενημερώθηκε.")
+                else:
+                    st.session_state.employees.append(employee_data)
+                    st.success(f"✅ Ο υπάλληλος '{name}' προστέθηκε.")
+                # Clear edit mode
+                st.session_state.edit_index = None
+
+    # Display registered employees
+    if st.session_state.edit_index is None and st.session_state.employees:
+        st.markdown("### Εγγεγραμμένοι Υπάλληλοι")
+        for i, emp in enumerate(st.session_state.employees):
+            with st.expander(f"👤 {emp['name']}"):
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.markdown(f"""
+                **Ρόλοι:** {', '.join(emp['roles'])}  
+                **Ρεπό:** {emp['days_off']}  
+                **Διαθεσιμότητα:** {', '.join(emp['availability'])}
+                """)
+
+                with col2:
+                    if st.button("✏️ Επεξεργασία", key=f"edit_{i}"):
+                        st.session_state.edit_index = i
+                    if st.button("🗑️ Διαγραφή", key=f"delete_{i}"):
+                        del st.session_state.employees[i]
+                        st.experimental_set_query_params()  # Safe refresh
+                        st.stop()
+
 # --- Main ---
 def main():
     init_session()
