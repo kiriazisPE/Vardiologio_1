@@ -441,13 +441,16 @@ def page_schedule():
                         })
 
         # ➕ Αποθήκευση
-        st.session_state.schedule = pd.DataFrame(data)
-        st.session_state.coverage = coverage
-        st.session_state.uncovered = uncovered
-        st.success("✅ Το πρόγραμμα δημιουργήθηκε!")
+        if data:
+            st.session_state.schedule = pd.DataFrame(data)
+            st.session_state.coverage = coverage
+            st.session_state.uncovered = uncovered
+            st.success("✅ Το πρόγραμμα δημιουργήθηκε!")
+        else:
+            st.error("❌ Δεν δημιουργήθηκε πρόγραμμα. Ελέγξτε τις ρυθμίσεις και τους υπαλλήλους.")
 
     # ✅ Εμφάνιση Προγράμματος
-    if not st.session_state.schedule.empty:
+    if "schedule" in st.session_state and not st.session_state.schedule.empty:
         st.markdown("### 📋 Πρόγραμμα Βαρδιών")
         st.dataframe(st.session_state.schedule, use_container_width=True)
 
