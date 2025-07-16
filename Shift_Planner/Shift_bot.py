@@ -325,8 +325,13 @@ def page_schedule():
                         if role in e["roles"] and shift in e["availability"]
                     ]
 
-                    # Debugging: Display eligible employees
-                    st.write(f"Eligible Employees for {day}, {shift}, {role}:", eligible_employees)
+                    # Debugging: Display eligible employees in a table
+                    st.markdown(f"### Eligible Employees for {day}, {shift}, {role}:")
+                    if eligible_employees:
+                        eligible_df = pd.DataFrame(eligible_employees)
+                        st.table(eligible_df)
+                    else:
+                        st.warning("Δεν υπάρχουν διαθέσιμοι υπάλληλοι.")
 
                     # Ταξινόμηση με βάση πόσες φορές έχουν ήδη ανατεθεί
                     sorted_employees = sorted(eligible_employees, key=lambda e: assignment_count[e["name"]])
