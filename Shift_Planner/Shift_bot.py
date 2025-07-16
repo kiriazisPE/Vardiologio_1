@@ -373,16 +373,19 @@ def page_employees():
                         st.session_state.edit_index = i
                     if st.button("🗑️ Διαγραφή", key=f"delete_{i}"):
                         del st.session_state.employees[i]
-                        st.experimental_set_query_params()  # Safe refresh
+                        st.query_params()  # Safe refresh
                         st.stop()
 
 # --- Page 3: Schedule Generation ---
 def page_schedule():
     st.header("🧠 Δημιουργία Προγράμματος")
+    
+    # Check if employees exist
     if not st.session_state.employees:
         st.warning("Προσθέστε πρώτα υπαλλήλους.")
         return
 
+    # Button to generate the schedule
     if st.button("▶️ Δημιουργία Προγράμματος"):
         data = []
         coverage = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
@@ -427,15 +430,18 @@ def page_schedule():
 
                     coverage[day][shift][role] = count
 
+        # Save the generated schedule
         st.session_state.schedule = pd.DataFrame(data)
         st.session_state.coverage = coverage
         st.success("✅ Το πρόγραμμα δημιουργήθηκε!")
 
+    # Display the schedule if it exists
     if not st.session_state.schedule.empty:
         st.dataframe(st.session_state.schedule)
         csv = st.session_state.schedule.to_csv(index=False).encode("utf-8")
         st.download_button("📥 Εξαγωγή CSV", csv, file_name="programma.csv", mime="text/csv")
 
+        # Display uncovered positions
         st.markdown("### ❗Μη Καλυμμένες Θέσεις")
         uncovered = []
         for day, shifts in st.session_state.coverage.items():
