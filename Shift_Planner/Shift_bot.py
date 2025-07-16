@@ -49,12 +49,12 @@ def init_session():
     st.session_state.setdefault("chat_history", [])
 
 # --- AI Processing ---
-def process_with_ai(user_input: str) -> dict:
+def process_with_ai(user_input: str, context: str = "") -> dict:
     """
     Use OpenAI API to analyze the user's command and extract intent, name, day, and extra info.
     """
     try:
-        system_prompt = """
+        system_prompt = f"""
         Είσαι βοηθός για ένα σύστημα διαχείρισης βαρδιών. Αναλύεις εντολές στα ελληνικά.
         Πρέπει να εξάγεις τις εξής πληροφορίες:
         1. intent: Τύπος εντολής (remove_from_schedule, add_day_off, availability_change, change_shift, ask_schedule_for_employee, list_day_schedule)
@@ -62,6 +62,7 @@ def process_with_ai(user_input: str) -> dict:
         3. day: Η ημέρα/ημερομηνία
         4. extra_info: Επιπλέον πληροφορίες (π.χ. βάρδια)
         
+        Context: {context}
         Απάντησε σε JSON μορφή.
         """
         response = client.chat.completions.create(
@@ -71,10 +72,18 @@ def process_with_ai(user_input: str) -> dict:
                 {"role": "user", "content": f"Ανάλυσε την εξής εντολή: {user_input}"}
             ]
         )
-        return json.loads(response.choices[0].message.content)
+        response_content = response.choices[0].message.content.strip()
+        
+        # Validate and parse the response
+        try:
+            result = json.loads(response_content)
+            return result
+        except json.JSONDecodeError:
+            st.error(f"❌ Σφάλμα: Η απάντηση δεν είναι έγκυρο JSON. Απάντηση: {response_content}")
+            return {"error": "Invalid JSON response"}
     except Exception as e:
         st.error(f"Σφάλμα κατά την επεξεργασία: {str(e)}")
-        return {}
+        return {"error": str(e)}
 
 # --- Navigation ---
 def navigation():
@@ -107,6 +116,11 @@ def page_business():
                 f"{role}", min_value=0, max_value=10, value=st.session_state.rules["max_employees_per_position"].get(role, 2), key=f"role_{role}"
             )
 
+    # AI Validation for Business Rules
+    if st.button("🔍 Επαλήθευση Ρυθμίσεων"):
+        ai_result = process_with_ai("Επαλήθευσε τις ρυθμίσεις επιχείρησης.", context=json.dumps(st.session_state.rules))
+        st.json(ai_result)
+
 # --- Page 2: Employees ---
 def page_employees():
     """Employee management page."""
@@ -120,13 +134,18 @@ def page_employees():
         submitted = st.form_submit_button("💾 Αποθήκευση")
 
         if submitted and name:
-            st.session_state.employees.append({
+            employee_data = {
                 "name": name.strip(),
                 "roles": roles,
                 "days_off": days_off,
                 "availability": availability
-            })
-            st.success(f"✅ Ο υπάλληλος '{name}' προστέθηκε.")
+            }
+            ai_result = process_with_ai("Επαλήθευσε τα δεδομένα υπαλλήλου.", context=json.dumps(employee_data))
+            if "error" in ai_result:
+                st.error("❌ Σφάλμα κατά την επαλήθευση των δεδομένων.")
+            else:
+                st.session_state.employees.append(employee_data)
+                st.success(f"✅ Ο υπάλληλος '{name}' προστέθηκε.")
 
     st.markdown("### Εγγεγραμμένοι Υπάλληλοι")
     for emp in st.session_state.employees:
@@ -163,6 +182,8 @@ def page_schedule():
 
         if data:
             st.session_state.schedule = pd.DataFrame(data)
+            ai_result = process_with_ai("Βελτιστοποίησε το πρόγραμμα.", context=json.dumps(data))
+            st.session_state.schedule = pd.DataFrame(ai_result.get("optimized_schedule", data))
             st.success("✅ Το πρόγραμμα δημιουργήθηκε!")
         else:
             st.error("❌ Δεν δημιουργήθηκε πρόγραμμα. Ελέγξτε τις ρυθμίσεις και τους υπαλλήλους.")
@@ -182,8 +203,11 @@ def page_chatbot():
 
     user_input = st.text_input("Γράψε την εντολή σου εδώ...", placeholder="Π.χ. Ο Κώστας δε μπορεί να δουλέψει αύριο")
     if st.button("💡 Εκτέλεση Εντολής"):
-        result = process_with_ai(user_input)
-        st.json(result)
+        result = process_with_ai(user_input, context=json.dumps(st.session_state.schedule.to_dict()))
+        if "error" in result:
+            st.error("❌ Δεν μπόρεσα να καταλάβω την εντολή.")
+        else:
+            st.json(result)
 
 # --- Main ---
 def main():
