@@ -181,7 +181,24 @@ def match_employee_name(user_input: str, schedule_df: pd.DataFrame) -> str:
 def extract_name_and_day(user_input: str, schedule_df: pd.DataFrame):
     text = user_input.lower()
     name = match_employee_name(user_input, schedule_df)
+    
+    # Check for specific days (e.g., "δευτέρες", "τρίτες", κ.λπ.)
+    day_plural_match = re.search(r"(δευτέρες|τρίτες|τετάρτες|πέμπτες|παρασκευές|σάββατα|κυριακές)", text)
+    if day_plural_match:
+        day = day_plural_match.group(1)
+        # Convert plural to singular for matching
+        day_map = {
+            "δευτέρες": "Δευτέρα",
+            "τρίτες": "Τρίτη",
+            "τετάρτες": "Τετάρτη",
+            "πέμπτες": "Πέμπτη",
+            "παρασκευές": "Παρασκευή",
+            "σάββατα": "Σάββατο",
+            "κυριακές": "Κυριακή"
+        }
+        return name, day_map.get(day, day)
 
+    # ...existing relative keywords and other date matching code...
     for word, offset in relative_keywords.items():
         if word in text:
             target_date = datetime.datetime.now() + datetime.timedelta(days=offset)
@@ -234,13 +251,14 @@ def page_chatbot():
         # Process different intents
         if intent == "remove_from_schedule":
             if name and day:
-                st.success(f"🗓 Ο {name} θα αφαιρεθεί από το πρόγραμμα την {day}")
-                mask = (schedule_df['Ημέρα'].str.contains(day)) & (schedule_df['Υπάλληλος'].str.lower() == name.lower())
+                st.success(f"🗓 Ο {name} θα αφαιρεθεί από το πρόγραμμα για {day}")
+                # Χρήση του str.contains για να πιάσει όλες τις εμφανίσεις της ημέρας
+                mask = (schedule_df['Ημέρα'].str.contains(day, case=False)) & (schedule_df['Υπάλληλος'].str.lower() == name.lower())
                 if not mask.any():
-                    st.warning(f"🔍 Ο {name} δεν έχει βάρδια για {day} ή το όνομα είναι λάθος.")
+                    st.warning(f"🔍 Ο {name} δεν έχει βάρδια για {day}")
                 else:
                     st.session_state.schedule = schedule_df[~mask].reset_index(drop=True)
-                    st.success(f"✅ Ο {name} αφαιρέθηκε από το πρόγραμμα για {day}.")
+                    st.success(f"✅ Ο {name} αφαιρέθηκε από το πρόγραμμα για όλες τις {day}")
             else:
                 st.warning("⚠️ Δεν αναγνωρίστηκε ξεκάθαρα όνομα ή ημέρα.")
 
