@@ -148,8 +148,20 @@ def page_employees():
                 st.success(f"✅ Ο υπάλληλος '{name}' προστέθηκε.")
 
     st.markdown("### Εγγεγραμμένοι Υπάλληλοι")
-    for emp in st.session_state.employees:
-        st.markdown(f"**{emp['name']}** - Ρόλοι: {', '.join(emp['roles'])}, Ρεπό: {emp['days_off']}, Διαθεσιμότητα: {', '.join(emp['availability'])}")
+    with st.expander("📋 Δείτε τους εγγεγραμμένους υπαλλήλους"):
+        if st.session_state.employees:
+            employee_table = pd.DataFrame([
+                {
+                    "Όνομα": emp["name"],
+                    "Ρόλοι": ", ".join(emp["roles"]),
+                    "Ρεπό": emp["days_off"],
+                    "Διαθεσιμότητα": ", ".join(emp["availability"]) if emp["availability"] else "Δεν μπορεί"
+                }
+                for emp in st.session_state.employees
+            ])
+            st.table(employee_table)
+        else:
+            st.info("Δεν υπάρχουν εγγεγραμμένοι υπάλληλοι. Προσθέστε έναν υπάλληλο για να ξεκινήσετε.")
 
 # --- Page 3: Schedule Generation ---
 def page_schedule():
