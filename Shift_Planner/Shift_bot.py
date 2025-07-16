@@ -390,6 +390,7 @@ def page_schedule():
         data = []
         coverage = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
         assigned = defaultdict(lambda: defaultdict(set))
+        uncovered = []  # Initialize uncovered list
         today = datetime.date.today()
 
         # Μετρητής αναθέσεων για ισορροπία
