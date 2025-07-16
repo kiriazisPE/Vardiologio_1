@@ -33,6 +33,8 @@ def process_with_ai(user_input: str, schedule_df: pd.DataFrame) -> tuple:
     Use OpenAI API to analyze the user's command and extract intent, name, day, and extra info.
     """
     try:
+        import openai  # Ensure the correct OpenAI module is imported
+
         system_prompt = """
         Είσαι βοηθός για ένα σύστημα διαχείρισης βαρδιών. Αναλύεις εντολές στα ελληνικά.
         Πρέπει να εξάγεις τις εξής πληροφορίες:
@@ -44,7 +46,7 @@ def process_with_ai(user_input: str, schedule_df: pd.DataFrame) -> tuple:
         Απάντησε σε JSON μορφή.
         """
 
-        response = client.ChatCompletion.create(
+        response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": system_prompt},
