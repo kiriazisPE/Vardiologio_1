@@ -209,6 +209,61 @@ def page_chatbot():
         else:
             st.json(result)
 
+            # Process the extracted intent and update the schedule
+            intent = result.get("intent")
+            name = result.get("name")
+            day = result.get("day")
+            extra_info = result.get("extra_info")
+
+            if intent == "remove_from_schedule":
+                # Remove the employee from the schedule for the specified day
+                st.session_state.schedule = st.session_state.schedule[
+                    ~((st.session_state.schedule["Υπάλληλος"] == name) & (st.session_state.schedule["Ημέρα"].str.contains(day)))
+                ]
+                st.success(f"✅ Ο υπάλληλος '{name}' αφαιρέθηκε από το πρόγραμμα για την ημέρα '{day}'.")
+
+            elif intent == "add_day_off":
+                # Add a day off for the employee
+                st.session_state.schedule = st.session_state.schedule[
+                    ~((st.session_state.schedule["Υπάλληλος"] == name) & (st.session_state.schedule["Ημέρα"].str.contains(day)))
+                ]
+                st.success(f"✅ Προστέθηκε ρεπό για τον υπάλληλο '{name}' την ημέρα '{day}'.")
+
+            elif intent == "availability_change":
+                # Change the availability of the employee
+                for emp in st.session_state.employees:
+                    if emp["name"] == name:
+                        emp["availability"] = extra_info.split(",")  # Update availability
+                        st.success(f"✅ Η διαθεσιμότητα του υπαλλήλου '{name}' ενημερώθηκε σε '{extra_info}'.")
+
+            elif intent == "change_shift":
+                # Change the shift for the employee
+                st.session_state.schedule.loc[
+                    (st.session_state.schedule["Υπάλληλος"] == name) & (st.session_state.schedule["Ημέρα"].str.contains(day)),
+                    "Βάρδια"
+                ] = extra_info
+                st.success(f"✅ Η βάρδια του υπαλλήλου '{name}' ενημερώθηκε σε '{extra_info}' για την ημέρα '{day}'.")
+
+            elif intent == "ask_schedule_for_employee":
+                # Display the schedule for the employee
+                employee_schedule = st.session_state.schedule[st.session_state.schedule["Υπάλληλος"] == name]
+                st.markdown(f"### Πρόγραμμα για τον υπάλληλο '{name}'")
+                st.dataframe(employee_schedule)
+
+            elif intent == "list_day_schedule":
+                # Display the schedule for the specified day
+                day_schedule = st.session_state.schedule[st.session_state.schedule["Ημέρα"].str.contains(day)]
+                st.markdown(f"### Πρόγραμμα για την ημέρα '{day}'")
+                st.dataframe(day_schedule)
+
+            else:
+                st.warning("⚠️ Η εντολή δεν αναγνωρίστηκε.")
+
+    # Display the updated schedule
+    if not st.session_state.schedule.empty:
+        st.markdown("### 📋 Ενημερωμένο Πρόγραμμα Βαρδιών")
+        st.dataframe(st.session_state.schedule)
+
 # --- Main ---
 def main():
     """Main function to run the app."""
