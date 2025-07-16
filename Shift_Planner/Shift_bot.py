@@ -99,7 +99,7 @@ def page_business():
     st.session_state.business_name = st.text_input("Εισάγετε το όνομα της επιχείρησης", st.session_state.business_name, help="Προσθέστε το όνομα της επιχείρησης σας.")
 
     st.markdown("### 📆 Επιλέξτε ενεργές βάρδιες")
-    st.session_state.active_shifts = st.multiselect("Βάρδιες που χρησιμοποιεί η επιχείρηση", ALL_SHIFTS, default=st.session_state.active_shifts, help="Επιλέξτε τις βάρδιες που ισχύουν για την επιχείρηση σας.")
+    st.session_state.active_shifts = st.multiselect("Βάρδιες που χρησιμοποιεί η επιχείρηση", ALL_SHIFTS, default=st.session_state.active_shifts, help="Επιλέξτε τις βάρδιες που ισχύουν για την επιχείρησή σας.")
 
     st.markdown("### 🧱 Επιλογή Ρόλων Επιχείρησης")
     st.session_state.roles = st.multiselect("Επιλέξτε ρόλους που απαιτούνται στην επιχείρηση", DEFAULT_ROLES + EXTRA_ROLES, default=DEFAULT_ROLES, help="Προσθέστε ή αφαιρέστε ρόλους ανάλογα με τις ανάγκες σας.")
@@ -134,19 +134,24 @@ def page_employees():
         availability = st.multiselect("Διαθεσιμότητα για όλες τις ημέρες", st.session_state.active_shifts, help="Επιλέξτε τις βάρδιες που είναι διαθέσιμος ο υπάλληλος.")
         submitted = st.form_submit_button("💾 Αποθήκευση")
 
-        if submitted and name:
-            employee_data = {
-                "name": name.strip(),
-                "roles": roles,
-                "days_off": days_off,
-                "availability": availability
-            }
-            ai_result = process_with_ai("Επαλήθευσε τα δεδομένα υπαλλήλου.", context=json.dumps(employee_data))
-            if "error" in ai_result:
-                st.error("❌ Σφάλμα κατά την επαλήθευση των δεδομένων.")
+        if submitted:
+            if not availability:
+                st.warning("⚠️ Παρακαλώ επιλέξτε τουλάχιστον μία βάρδια για τη διαθεσιμότητα του υπαλλήλου.")
+            elif not name.strip():
+                st.warning("⚠️ Το όνομα του υπαλλήλου δεν μπορεί να είναι κενό.")
             else:
-                st.session_state.employees.append(employee_data)
-                st.success(f"✅ Ο υπάλληλος '{name}' προστέθηκε.")
+                employee_data = {
+                    "name": name.strip(),
+                    "roles": roles,
+                    "days_off": days_off,
+                    "availability": availability
+                }
+                ai_result = process_with_ai("Επαλήθευσε τα δεδομένα υπαλλήλου.", context=json.dumps(employee_data))
+                if "error" in ai_result:
+                    st.error("❌ Σφάλμα κατά την επαλήθευση των δεδομένων.")
+                else:
+                    st.session_state.employees.append(employee_data)
+                    st.success(f"✅ Ο υπάλληλος '{name}' προστέθηκε.")
 
     st.markdown("### Εγγεγραμμένοι Υπάλληλοι")
     with st.expander("📋 Δείτε τους εγγεγραμμένους υπαλλήλους"):
@@ -165,11 +170,16 @@ def page_employees():
                             new_availability = st.multiselect("Διαθεσιμότητα", st.session_state.active_shifts, default=emp["availability"])
                             save_changes = st.form_submit_button("💾 Αποθήκευση Αλλαγών")
                             if save_changes:
-                                emp["name"] = new_name.strip()
-                                emp["roles"] = new_roles
-                                emp["days_off"] = new_days_off
-                                emp["availability"] = new_availability
-                                st.success(f"✅ Ο υπάλληλος '{new_name}' ενημερώθηκε.")
+                                if not new_availability:
+                                    st.warning("⚠️ Παρακαλώ επιλέξτε τουλάχιστον μία βάρδια για τη διαθεσιμότητα του υπαλλήλου.")
+                                elif not new_name.strip():
+                                    st.warning("⚠️ Το όνομα του υπαλλήλου δεν μπορεί να είναι κενό.")
+                                else:
+                                    emp["name"] = new_name.strip()
+                                    emp["roles"] = new_roles
+                                    emp["days_off"] = new_days_off
+                                    emp["availability"] = new_availability
+                                    st.success(f"✅ Ο υπάλληλος '{new_name}' ενημερώθηκε.")
                 with col3:
                     if st.button("🗑️ Διαγραφή", key=f"delete_{index}"):
                         st.session_state.employees.pop(index)
@@ -198,6 +208,8 @@ def page_schedule():
                         e for e in st.session_state.employees
                         if role in e["roles"] and shift in e["availability"]
                     ]
+                    if not eligible_employees:
+                        st.warning(f"⚠️ Δεν υπάρχουν διαθέσιμοι υπάλληλοι για τον ρόλο '{role}' στη βάρδια '{shift}' την ημέρα '{day}'.")
                     for e in eligible_employees:
                         data.append({
                             "Ημέρα": f"{day} ({date})",
