@@ -23,7 +23,9 @@ if not intent_file.exists():
     st.error(f"❌ Το αρχείο {intent_file.name} δεν βρέθηκε στον φάκελο της εφαρμογής.")
     intent_examples = []
 else:
-    with intent_file.open(encoding="utf-8") as f:
+    json_path = Path(__file__).parent / "intent_examples.json"
+    with json_path.open(encoding="utf-8") as f:
+    intent_examples = json.load(f)
         content = f.read()
         if not content.strip():
             raise ValueError("❌ Το αρχείο intent_examples.json είναι κενό ή περιέχει μόνο κενά.")
