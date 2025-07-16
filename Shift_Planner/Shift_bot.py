@@ -241,43 +241,54 @@ def extract_name_and_day(user_input: str, schedule_df: pd.DataFrame):
 # --- Page 4: Chatbot Commands --
 def page_chatbot():
     st.title("🍊 Chatbot Εντολές")
-    st.markdown("Π.χ. Ο Κώστας δε μπορεί να δουλέψει αύριο")
-    user_input = st.text_input("Εντολή", placeholder="π.χ. Ο Κώστας δε μπορεί να δουλέψει αύριο", key="chat_input")
     
+    # Check for schedule first
     if "schedule" not in st.session_state or st.session_state.schedule.empty:
         st.warning("📋 Δεν έχει δημιουργηθεί πρόγραμμα. Πήγαινε στη σελίδα 'Πρόγραμμα' για να δημιουργήσεις.")
         return
 
+    # Display current schedule
     schedule_df = st.session_state.schedule
-    st.markdown("### 📋 Πρόγραμμα Βαρδιών")
-    st.dataframe(schedule_df)
-
-    if st.button("💡 Εκτέλεση Εντολής", key="execute_command_intent"):
-        # Χρήση του AI για ανάλυση της εντολής
-        intent, name, day, extra_info = process_with_ai(user_input, schedule_df)
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.markdown("### 💬 Εντολή")
+        st.markdown("Π.χ. _Ο Κώστας δε μπορεί να δουλέψει αύριο_")
+        user_input = st.text_input("", placeholder="Γράψε την εντολή σου εδώ...", key="chat_input")
         
-        if not intent:
-            st.error("❌ Δεν μπόρεσα να καταλάβω την εντολή.")
-            return
+        if st.button("💡 Εκτέλεση Εντολής", key="execute_command_intent"):
+            if not user_input.strip():
+                st.error("❌ Παρακαλώ γράψε μια εντολή πρώτα.")
+                return
+                
+            # Process command
+            intent, name, day, extra_info = process_with_ai(user_input, schedule_df)
+            
+            if not intent:
+                st.error("❌ Δεν μπόρεσα να καταλάβω την εντολή.")
+                return
 
-        if intent == "remove_from_schedule":
-            if name and day:
-                mask = (schedule_df['Ημέρα'].str.contains(day, case=False)) & \
-                       (schedule_df['Υπάλληλος'].str.lower() == name.lower())
-                if not mask.any():
-                    st.warning(f"🔍 Ο {name} δεν έχει βάρδια για {day}")
+            if intent == "remove_from_schedule":
+                if name and day:
+                    mask = (schedule_df['Ημέρα'].str.contains(day, case=False)) & \
+                           (schedule_df['Υπάλληλος'].str.lower() == name.lower())
+                    if not mask.any():
+                        st.warning(f"🔍 Ο {name} δεν έχει βάρδια για {day}")
+                    else:
+                        st.session_state.schedule = schedule_df[~mask].reset_index(drop=True)
+                        st.success(f"✅ Ο {name} αφαιρέθηκε από το πρόγραμμα για {day}")
                 else:
-                    st.session_state.schedule = schedule_df[~mask].reset_index(drop=True)
-                    st.success(f"✅ Ο {name} αφαιρέθηκε από το πρόγραμμα για {day}")
+                    st.warning("⚠️ Δεν αναγνωρίστηκε ξεκάθαρα όνομα ή ημέρα.")
+            
+            elif intent == "change_shift":
+                if name and day and "shift" in extra_info:
+                    mask = (schedule_df['Ημέρα'].str.contains(day, case=False)) & \
+                           (schedule_df['Υπάλληλος'].str.lower() == name.lower())
+                    if mask.any():
+                        schedule_df.loc[mask, 'Βάρδια'] = extra_info["shift"]
+                        st.session_state.schedule = schedule_df
+                        st.success(f"✅ Η βάρδια του {name} άλλαξε σε {extra_info['shift']}")
 
-        elif intent == "change_shift":
-            if name and day and "shift" in extra_info:
-                # Εφαρμογή αλλαγής βάρδιας
-                mask = (schedule_df['Ημέρα'].str.contains(day, case=False)) & \
-                       (schedule_df['Υπάλληλος'].str.lower() == name.lower())
-                if mask.any():
-                    schedule_df.loc[mask, 'Βάρδια'] = extra_info["shift"]
-                    st.session_state.schedule = schedule_df
-                    st.success(f"✅ Η βάρδια του {name} άλλαξε σε {extra_info['shift']}")
-
-        # ... υπόλοιπα intents ...
+    with col2:
+        st.markdown("### 📋 Πρόγραμμα Βαρδιών")
+        st.dataframe(st.session_state.schedule, use_container_width=True)
