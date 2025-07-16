@@ -384,15 +384,6 @@ def page_schedule():
         return
 
     if st.button("▶️ Δημιουργία Προγράμματος"):
-    data = []
-    coverage = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
-    assigned = defaultdict(lambda: defaultdict(set))
-    today = datetime.date.today()
-
-    # Μετρητής αναθέσεων για ισορροπία
-    assignment_count = defaultdict(int)
-
-    if st.button("▶️ Δημιουργία Προγράμματος"):
         data = []
         coverage = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
         assigned = defaultdict(lambda: defaultdict(set))
@@ -439,8 +430,6 @@ def page_schedule():
         st.session_state.schedule = pd.DataFrame(data)
         st.session_state.coverage = coverage
         st.success("✅ Το πρόγραμμα δημιουργήθηκε!")
-
-
 
     if not st.session_state.schedule.empty:
         st.dataframe(st.session_state.schedule)
