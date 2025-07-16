@@ -385,6 +385,9 @@ def page_schedule():
         st.warning("Προσθέστε πρώτα υπαλλήλους.")
         return
 
+    # Debugging: Display employee data
+    st.write("Employees:", st.session_state.employees)
+
     # Button to generate the schedule
     if st.button("▶️ Δημιουργία Προγράμματος"):
         data = []
@@ -408,6 +411,9 @@ def page_schedule():
                         e for e in st.session_state.employees
                         if role in e["roles"] and shift in e["availability"]
                     ]
+
+                    # Debugging: Display eligible employees
+                    st.write(f"Eligible Employees for {day}, {shift}, {role}:", eligible_employees)
 
                     # Ταξινόμηση με βάση πόσες φορές έχουν ήδη ανατεθεί
                     sorted_employees = sorted(eligible_employees, key=lambda e: assignment_count[e["name"]])
@@ -439,6 +445,9 @@ def page_schedule():
                             "Ρόλος": role,
                             "Ανεπάρκεια": needed - count
                         })
+
+        # Debugging: Display generated data
+        st.write("Generated Data:", data)
 
         # ➕ Αποθήκευση
         if data:
