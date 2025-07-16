@@ -10,59 +10,59 @@ import json
 from pathlib import Path
 from difflib import SequenceMatcher
 
-
-
 # --- Load .env for API Key ---
 load_dotenv()
 client = OpenAI()
 
-# Φόρτωση intent_examples.json από τον ίδιο φάκελο με το script
+# Load intent examples
 intent_file = Path(__file__).parent / "intent_examples.json"
-
 if not intent_file.exists():
     st.error(f"❌ Το αρχείο {intent_file.name} δεν βρέθηκε στον φάκελο της εφαρμογής.")
-    intent_examples = []
+    intent_examples = {}
 else:
-    with intent_file.open(encoding="utf-8-sig") as f:
-        content = f.read()
-        if not content.strip():
-            raise ValueError("❌ Το αρχείο intent_examples.json είναι κενό ή περιέχει μόνο κενά.")
-        
+    with intent_file.open(encoding="utf-8") as f:
         try:
-            intent_examples = json.loads(content)
+            intent_examples = json.loads(f.read())
         except json.JSONDecodeError as e:
-            print("❌ Σφάλμα στο JSON:", e)
-            print("➡️ Πρώτα 300 χαρακτήρες:")
-            print(content[:300])
-            raise e
+            st.error(f"❌ Σφάλμα στο JSON: {e}")
+            intent_examples = {}
 
-def classify_intent(user_input: str, examples: dict) -> str:
+# --- AI Processing ---
+def process_with_ai(user_input: str, schedule_df: pd.DataFrame) -> tuple:
+    """
+    Use OpenAI API to analyze the user's command and extract intent, name, day, and extra info.
+    """
     try:
         system_prompt = """
-        Αναγνώρισε την πρόθεση της εντολής. Πιθανές προθέσεις:
-        - remove_from_schedule: Αφαίρεση από το πρόγραμμα
-        - add_day_off: Προσθήκη ρεπό
-        - availability_change: Αλλαγή διαθεσιμότητας
-        - change_shift: Αλλαγή βάρδιας
-        - ask_schedule_for_employee: Ερώτηση για πρόγραμμα υπαλλήλου
-        - list_day_schedule: Εμφάνιση προγράμματος ημέρας
+        Είσαι βοηθός για ένα σύστημα διαχείρισης βαρδιών. Αναλύεις εντολές στα ελληνικά.
+        Πρέπει να εξάγεις τις εξής πληροφορίες:
+        1. intent: Τύπος εντολής (remove_from_schedule, add_day_off, availability_change, change_shift, ask_schedule_for_employee, list_day_schedule)
+        2. name: Το όνομα του υπαλλήλου
+        3. day: Η ημέρα/ημερομηνία
+        4. extra_info: Επιπλέον πληροφορίες (π.χ. βάρδια)
         
-        Απάντησε μόνο με το όνομα της πρόθεσης.
+        Απάντησε σε JSON μορφή.
         """
 
-        response = client.chat.completions.create(
+        response = client.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_input}
+                {"role": "user", "content": f"Ανάλυσε την εξής εντολή: {user_input}"}
             ],
-            temperature=0.3
+            temperature=0.7
         )
 
-        return response.choices[0].message.content.strip()
-    except:
-        return "unknown"
-
+        result = json.loads(response.choices[0].message.content)
+        return (
+            result.get("intent"),
+            result.get("name"),
+            result.get("day"),
+            result.get("extra_info", {})
+        )
+    except Exception as e:
+        st.error(f"Σφάλμα κατά την επεξεργασία: {str(e)}")
+        return None, None, None, {}
 
 # --- Page Config ---
 st.set_page_config(page_title="Βοηθός Προγράμματος Βαρδιών", layout="wide")
@@ -294,3 +294,13 @@ def page_chatbot():
         except Exception as e:
             st.error(f"❌ Σφάλμα: {str(e)}")
             return
+
+# --- Main ---
+def main():
+    init_session()
+    navigation()
+    page_funcs = [page_business, page_employees, page_schedule, page_chatbot]
+    page_funcs[st.session_state.page]()
+
+if __name__ == "__main__":
+    main()
