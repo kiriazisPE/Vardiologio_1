@@ -239,7 +239,12 @@ def page_chatbot():
         st.warning("📋 Δεν έχει δημιουργηθεί πρόγραμμα. Πήγαινε στη σελίδα 'Πρόγραμμα' για να δημιουργήσεις.")
         return
 
-    user_input = st.text_input("Γράψε την εντολή σου εδώ...", placeholder="Π.χ. Υπάρχει πάρτι αύριο, πρόσθεσε 2 μάγειρες και 1 μπάρμαν", help="Προσθέστε μια εντολή για να επεξεργαστεί το πρόγραμμα.")
+    # Ensure the text input has a non-empty label
+    user_input = st.text_input(
+        label="Εισάγετε την εντολή σας",
+        placeholder="Π.χ. Ο Κώστας δε μπορεί να δουλέψει αύριο",
+        help="Προσθέστε μια εντολή για να επεξεργαστεί το πρόγραμμα."
+    )
     if st.button("💡 Εκτέλεση Εντολής"):
         result = process_with_ai(user_input, context=json.dumps(st.session_state.schedule.to_dict()))
         if "error" in result:
@@ -251,20 +256,14 @@ def page_chatbot():
             day = result.get("day")
             extra_info = result.get("extra_info")
 
-            if intent == "change_company_settings":
-                # Update company settings dynamically
-                settings_update = json.loads(extra_info)  # Parse the settings update
-                for role, count in settings_update.items():
-                    st.session_state.rules["max_employees_per_position"][role] += count
-                st.success(f"✅ Οι ρυθμίσεις της εταιρείας ενημερώθηκαν: {settings_update}")
+            # Validation for impossible tasks
+            if intent == "change_shift" and st.session_state.schedule[
+                (st.session_state.schedule["Υπάλληλος"] == name) & (st.session_state.schedule["Ημέρα"].str.contains(day))
+            ].shape[0] > 0:
+                st.warning(f"⚠️ Ο υπάλληλος '{name}' έχει ήδη βάρδια την ημέρα '{day}'. Δεν μπορεί να ανατεθεί διπλή βάρδια.")
+                return
 
-            elif intent == "employee_interaction_rule":
-                # Add interaction rules between employees
-                interaction_rule = json.loads(extra_info)  # Parse the interaction rule
-                st.session_state.rules.setdefault("employee_interactions", []).append(interaction_rule)
-                st.success(f"✅ Προστέθηκε κανόνας αλληλεπίδρασης: {interaction_rule}")
-
-            elif intent == "remove_from_schedule":
+            if intent == "remove_from_schedule":
                 st.session_state.schedule = st.session_state.schedule[
                     ~((st.session_state.schedule["Υπάλληλος"] == name) & (st.session_state.schedule["Ημέρα"].str.contains(day)))
                 ]
