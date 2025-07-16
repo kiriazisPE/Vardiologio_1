@@ -79,18 +79,18 @@ def process_with_ai(user_input: str, context: str = "") -> dict:
             result = json.loads(response_content)
             return result
         except json.JSONDecodeError:
-            st.error(f"❌ Σφάλμα: Η απάντηση δεν είναι έγκυρο JSON. Απάντηση: {response_content}")
+            st.warning("⚠️ Η εντολή δεν αναγνωρίστηκε πλήρως. Δοκιμάστε να διατυπώσετε την εντολή διαφορετικά ή να είστε πιο συγκεκριμένοι.")
             return {"error": "Invalid JSON response"}
     except Exception as e:
-        st.error(f"Σφάλμα κατά την επεξεργασία: {str(e)}")
+        st.error("❌ Υπήρξε πρόβλημα κατά την επεξεργασία της εντολής. Παρακαλώ δοκιμάστε ξανά.")
         return {"error": str(e)}
 
 # --- Navigation ---
 def navigation():
     """Handle page navigation."""
     st.sidebar.title("🔁 Πλοήγηση")
-    choice = st.sidebar.radio("Μενού", ["1️⃣ Επιχείρηση", "2️⃣ Υπάλληλοι", "3️⃣ Πρόγραμμα", "4️⃣ Chatbot"])
-    st.session_state.page = ["1️⃣ Επιχείρηση", "2️⃣ Υπάλληλοι", "3️⃣ Πρόγραμμα", "4️⃣ Chatbot"].index(choice)
+    choice = st.sidebar.radio("Μενού", ["1️⃣ Επιχείρηση", "2️⃣ Υπαλλήλοι", "3️⃣ Πρόγραμμα", "4️⃣ Chatbot"])
+    st.session_state.page = ["1️⃣ Επιχείρηση", "2️⃣ Υπαλλήλοι", "3️⃣ Πρόγραμμα", "4️⃣ Chatbot"].index(choice)
 
 # --- Page 1: Business Setup ---
 def page_business():
