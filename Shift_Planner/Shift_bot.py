@@ -126,6 +126,7 @@ def page_employees():
     """Employee management page."""
     st.header("👥 Προσθήκη ή Επεξεργασία Υπαλλήλων")
 
+    # Form for adding new employees
     with st.form("employee_form"):
         name = st.text_input("Όνομα", help="Προσθέστε το όνομα του υπαλλήλου.")
         roles = st.multiselect("Ρόλοι", st.session_state.roles, help="Επιλέξτε τους ρόλους που μπορεί να αναλάβει ο υπάλληλος.")
@@ -150,16 +151,29 @@ def page_employees():
     st.markdown("### Εγγεγραμμένοι Υπάλληλοι")
     with st.expander("📋 Δείτε τους εγγεγραμμένους υπαλλήλους"):
         if st.session_state.employees:
-            employee_table = pd.DataFrame([
-                {
-                    "Όνομα": emp["name"],
-                    "Ρόλοι": ", ".join(emp["roles"]),
-                    "Ρεπό": emp["days_off"],
-                    "Διαθεσιμότητα": ", ".join(emp["availability"]) if emp["availability"] else "Δεν μπορεί"
-                }
-                for emp in st.session_state.employees
-            ])
-            st.table(employee_table)
+            for index, emp in enumerate(st.session_state.employees):
+                col1, col2, col3 = st.columns([3, 1, 1])
+                with col1:
+                    st.markdown(f"**{emp['name']}** - Ρόλοι: {', '.join(emp['roles'])}, Ρεπό: {emp['days_off']}, Διαθεσιμότητα: {', '.join(emp['availability']) if emp['availability'] else 'Δεν μπορεί'}")
+                with col2:
+                    if st.button("✏️ Επεξεργασία", key=f"edit_{index}"):
+                        # Edit employee logic
+                        with st.form(f"edit_form_{index}"):
+                            new_name = st.text_input("Όνομα", value=emp["name"])
+                            new_roles = st.multiselect("Ρόλοι", st.session_state.roles, default=emp["roles"])
+                            new_days_off = st.slider("Ρεπό ανά εβδομάδα", 1, 3, emp["days_off"])
+                            new_availability = st.multiselect("Διαθεσιμότητα", st.session_state.active_shifts, default=emp["availability"])
+                            save_changes = st.form_submit_button("💾 Αποθήκευση Αλλαγών")
+                            if save_changes:
+                                emp["name"] = new_name.strip()
+                                emp["roles"] = new_roles
+                                emp["days_off"] = new_days_off
+                                emp["availability"] = new_availability
+                                st.success(f"✅ Ο υπάλληλος '{new_name}' ενημερώθηκε.")
+                with col3:
+                    if st.button("🗑️ Διαγραφή", key=f"delete_{index}"):
+                        st.session_state.employees.pop(index)
+                        st.success(f"✅ Ο υπάλληλος '{emp['name']}' διαγράφηκε.")
         else:
             st.info("Δεν υπάρχουν εγγεγραμμένοι υπάλληλοι. Προσθέστε έναν υπάλληλο για να ξεκινήσετε.")
 
