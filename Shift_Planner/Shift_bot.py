@@ -207,8 +207,6 @@ def page_chatbot():
         if "error" in result:
             st.error("❌ Δεν μπόρεσα να καταλάβω την εντολή.")
         else:
-            st.json(result)
-
             # Process the extracted intent and update the schedule
             intent = result.get("intent")
             name = result.get("name")
