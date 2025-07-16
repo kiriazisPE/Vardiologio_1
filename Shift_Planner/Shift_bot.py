@@ -79,7 +79,7 @@ relative_keywords = {
     "μεθαύριο": 2
 }
 
-day_pattern = r"(Δευτέρα|Τρίτη|Τετάρτη|Πέμπτη|Παρασκευή|Σάββατο|Κυριακή)"
+day_pattern = r"(δευτέρα(?:ς|ες)?|τρίτη(?:ς|ες)?|τετάρτη(?:ς|ες)?|πέμπτη(?:ς|ες)?|παρασκευή(?:ς|ες)?|σάββατο(?:υ|α)?|κυριακή(?:ς|ες)?)"
 date_pattern = r"\d{2}/\d{2}/\d{4}"
 combined_date_pattern = fr"{day_pattern} ({{date_pattern}})"
 
@@ -163,14 +163,16 @@ def page_business():
         st.success("✅ Οι ρυθμίσεις αποθηκεύτηκαν.")
 
 # --- Page 4: Chatbot Commands ---
-def extract_name_and_day(text):
-    name_match = re.search(r"(ο|η)?\s*([Α-Ωα-ωίϊΐόάέύϋΰήώΑ-Ζ]+)", text)
-    name = name_match.group(2) if name_match else None
+def extract_name_and_day(user_input: str, schedule_df: pd.DataFrame):
+    text = user_input.lower()
+    name = match_employee_name(user_input, schedule_df)
+
     for word, offset in relative_keywords.items():
         if word in text:
             target_date = datetime.datetime.now() + datetime.timedelta(days=offset)
             weekday = greek_weekdays[target_date.weekday()]
             return name, f"{weekday} ({target_date.strftime('%d/%m/%Y')})"
+
     match_days = re.search(r"επόμεν(ες|ους)? (\d{1,2}) μέρ", text)
     if match_days:
         num_days = int(match_days.group(2))
@@ -180,10 +182,13 @@ def extract_name_and_day(text):
             weekday = greek_weekdays[target_date.weekday()]
             dates.append(f"{weekday} ({target_date.strftime('%d/%m/%Y')})")
         return name, dates
-    date_match = re.search(combined_date_pattern, text)
+
+    date_match = re.search(day_pattern, text)
     if date_match:
-        return name, date_match.group()
-    return None, None
+        day = date_match.group(1).capitalize()
+        return name, day
+
+    return name, None
 
 def page_chatbot():
     st.title("🍊 Chatbot Εντολές")
@@ -197,7 +202,8 @@ def page_chatbot():
     if st.button("💡 Εκτέλεση Εντολής", key="execute_command_intent"):
         intent = classify_intent(user_input, intent_examples)
         schedule_df = st.session_state.schedule
-        name, day = extract_name_and_day(user_input)
+        name, day = extract_name_and_day(user_input, schedule_df)
+
 
         if intent == "remove_from_schedule":
             if name and day:
