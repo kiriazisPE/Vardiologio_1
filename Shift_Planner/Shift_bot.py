@@ -210,35 +210,39 @@ def page_chatbot():
     st.markdown("Π.χ. Ο Κώστας δε μπορεί να δουλέψει αύριο")
     user_input = st.text_input("Εντολή", placeholder="π.χ. Ο Κώστας δε μπορεί να δουλέψει αύριο", key="chat_input")
     
-    # Αρχικοποίηση του intent
+    # Initialize all variables at the start
     intent = None
-    schedule_df = st.session_state.schedule
     name = None
     day = None
-
+    
+    # Check for schedule first
     if "schedule" not in st.session_state or st.session_state.schedule.empty:
         st.warning("📋 Δεν έχει δημιουργηθεί πρόγραμμα. Πήγαινε στη σελίδα 'Πρόγραμμα' για να δημιουργήσεις.")
         return
 
+    schedule_df = st.session_state.schedule
+    
+    # Display current schedule
+    st.markdown("### 📋 Πρόγραμμα Βαρδιών")
+    st.dataframe(schedule_df)
+
+    # Process command only when button is clicked
     if st.button("💡 Εκτέλεση Εντολής", key="execute_command_intent"):
         intent = classify_intent(user_input, intent_examples)
         name, day = extract_name_and_day(user_input, schedule_df)
-
-    # Εμφάνιση προγράμματος πάντα κάτω από το bot
-    st.markdown("### 📋 Πρόγραμμα Βαρδιών")
-    st.dataframe(st.session_state.schedule)
-
-    if intent == "remove_from_schedule":
-        if name and day:
-            st.success(f"🗓 Ο {name} θα αφαιρεθεί από το πρόγραμμα την {day}")
-            mask = (schedule_df['Ημέρα'].str.contains(day)) & (schedule_df['Υπάλληλος'].str.lower() == name.lower())
-            if not mask.any():
-                st.warning(f"🔍 Ο {name} δεν έχει βάρδια για {day} ή το όνομα είναι λάθος.")
+        
+        # Process different intents
+        if intent == "remove_from_schedule":
+            if name and day:
+                st.success(f"🗓 Ο {name} θα αφαιρεθεί από το πρόγραμμα την {day}")
+                mask = (schedule_df['Ημέρα'].str.contains(day)) & (schedule_df['Υπάλληλος'].str.lower() == name.lower())
+                if not mask.any():
+                    st.warning(f"🔍 Ο {name} δεν έχει βάρδια για {day} ή το όνομα είναι λάθος.")
+                else:
+                    st.session_state.schedule = schedule_df[~mask].reset_index(drop=True)
+                    st.success(f"✅ Ο {name} αφαιρέθηκε από το πρόγραμμα για {day}.")
             else:
-                st.session_state.schedule = schedule_df[~mask].reset_index(drop=True)
-                st.success(f"✅ Ο {name} αφαιρέθηκε από το πρόγραμμα για {day}.")
-        else:
-            st.warning("⚠️ Δεν αναγνωρίστηκε ξεκάθαρα όνομα ή ημέρα.")
+                st.warning("⚠️ Δεν αναγνωρίστηκε ξεκάθαρα όνομα ή ημέρα.")
 
     elif intent == "add_day_off":
         if name and day:
