@@ -303,9 +303,6 @@ def page_schedule():
         st.warning("Προσθέστε πρώτα υπαλλήλους.")
         return
 
-    # Debugging: Display employee data
-    st.write("Employees:", st.session_state.employees)
-
     # Button to generate the schedule
     if st.button("▶️ Δημιουργία Προγράμματος"):
         data = []
@@ -317,7 +314,7 @@ def page_schedule():
         # Μετρητής αναθέσεων για ισορροπία
         assignment_count = defaultdict(int)
 
-        for i, day in enumerate(DAYS):
+        for i, day in enumerate(DAYS * 4):  # Generate for 4 weeks (1 month)
             date = (today + datetime.timedelta(days=i)).strftime("%d/%m/%Y")
             for shift in st.session_state.active_shifts:
                 for role in st.session_state.roles:
@@ -329,14 +326,6 @@ def page_schedule():
                         e for e in st.session_state.employees
                         if role in e["roles"] and shift in e["availability"]
                     ]
-
-                    # Debugging: Display eligible employees in a table
-                    st.markdown(f"### Eligible Employees for {day}, {shift}, {role}:")
-                    if eligible_employees:
-                        eligible_df = pd.DataFrame(eligible_employees)
-                        st.table(eligible_df)
-                    else:
-                        st.warning("Δεν υπάρχουν διαθέσιμοι υπαλλήλοι.")
 
                     # Ταξινόμηση με βάση πόσες φορές έχουν ήδη ανατεθεί
                     sorted_employees = sorted(eligible_employees, key=lambda e: assignment_count[e["name"]])
@@ -369,9 +358,6 @@ def page_schedule():
                             "Ανεπάρκεια": needed - count
                         })
 
-        # Debugging: Display generated data
-        st.write("Generated Data:", data)
-
         # ➕ Αποθήκευση
         if data:
             st.session_state.schedule = pd.DataFrame(data)
@@ -384,10 +370,21 @@ def page_schedule():
     # ✅ Εμφάνιση Προγράμματος
     if "schedule" in st.session_state and not st.session_state.schedule.empty:
         st.markdown("### 📋 Πρόγραμμα Βαρδιών")
-        st.dataframe(st.session_state.schedule, use_container_width=True)
+        
+        # Pivot the schedule data to create a table with employees as rows and days as columns
+        schedule_df = st.session_state.schedule
+        pivot_table = schedule_df.pivot_table(
+            index="Υπάλληλος",
+            columns="Ημέρα",
+            values="Βάρδια",
+            aggfunc=lambda x: ', '.join(x) if isinstance(x, list) else x
+        ).fillna("")
 
-        csv = st.session_state.schedule.to_csv(index=False).encode("utf-8")
-        st.download_button("📥 Εξαγωγή CSV", csv, file_name="programma.csv", mime="text/csv")
+        st.dataframe(pivot_table, use_container_width=True)
+
+        # Download button for the pivot table
+        csv = pivot_table.to_csv(index=True).encode("utf-8")
+        st.download_button("📥 Εξαγωγή CSV", csv, file_name="programma_monthly.csv", mime="text/csv")
 
         # ❗ Εμφάνιση μη καλυμμένων θέσεων
         if "uncovered" in st.session_state and st.session_state.uncovered:
