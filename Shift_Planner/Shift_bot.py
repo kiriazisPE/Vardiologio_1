@@ -380,20 +380,18 @@ def page_employees():
 def page_schedule():
     st.header("🧠 Δημιουργία Προγράμματος")
     
-    # Check if employees exist
     if not st.session_state.employees:
         st.warning("Προσθέστε πρώτα υπαλλήλους.")
         return
 
-    # Button to generate the schedule
     if st.button("▶️ Δημιουργία Προγράμματος"):
         data = []
         coverage = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
         assigned = defaultdict(lambda: defaultdict(set))
         today = datetime.date.today()
-
-        # Μετρητής αναθέσεων για ισορροπία
         assignment_count = defaultdict(int)
+
+        uncovered = []  # 🟡 για μη καλυμμένες θέσεις
 
         for i, day in enumerate(DAYS):
             date = (today + datetime.timedelta(days=i)).strftime("%d/%m/%Y")
@@ -402,18 +400,15 @@ def page_schedule():
                     needed = st.session_state.rules["max_employees_per_position"].get(role, 1)
                     count = 0
 
-                    # Φιλτράρισμα υπαλλήλων με βάση διαθεσιμότητα και ρόλο
                     eligible_employees = [
                         e for e in st.session_state.employees
                         if role in e["roles"] and shift in e["availability"]
                     ]
 
-                    # Ταξινόμηση με βάση πόσες φορές έχουν ήδη ανατεθεί
                     sorted_employees = sorted(eligible_employees, key=lambda e: assignment_count[e["name"]])
 
                     for e in sorted_employees:
                         name = e["name"]
-                        # Αποφυγή διπλής ανάθεσης σε ίδια βάρδια/ρόλο
                         if (shift, role) in assigned[day][name]:
                             continue
                         data.append({
@@ -430,30 +425,35 @@ def page_schedule():
 
                     coverage[day][shift][role] = count
 
-        # Save the generated schedule
+                    # Αν υπάρχουν λιγότερα από τα απαιτούμενα άτομα
+                    if count < needed:
+                        uncovered.append({
+                            "Ημέρα": f"{day} ({date})",
+                            "Βάρδια": shift,
+                            "Ρόλος": role,
+                            "Ανεπάρκεια": needed - count
+                        })
+
+        # ➕ Αποθήκευση
         st.session_state.schedule = pd.DataFrame(data)
         st.session_state.coverage = coverage
+        st.session_state.uncovered = uncovered
         st.success("✅ Το πρόγραμμα δημιουργήθηκε!")
 
-    # Display the schedule if it exists
+    # ✅ Εμφάνιση Προγράμματος
     if not st.session_state.schedule.empty:
-        st.dataframe(st.session_state.schedule)
+        st.markdown("### 📋 Πρόγραμμα Βαρδιών")
+        st.dataframe(st.session_state.schedule, use_container_width=True)
+
         csv = st.session_state.schedule.to_csv(index=False).encode("utf-8")
         st.download_button("📥 Εξαγωγή CSV", csv, file_name="programma.csv", mime="text/csv")
 
-        # Display uncovered positions
-        st.markdown("### ❗Μη Καλυμμένες Θέσεις")
-        uncovered = []
-        for day, shifts in st.session_state.coverage.items():
-            for shift, roles in shifts.items():
-                for role, count in roles.items():
-                    needed = st.session_state.rules["max_employees_per_position"].get(role, 1)
-                    if count < needed:
-                        uncovered.append({"Ημέρα": day, "Βάρδια": shift, "Ρόλος": role, "Ανεπάρκεια": needed - count})
-        if uncovered:
-            st.dataframe(pd.DataFrame(uncovered))
+        # ❗ Εμφάνιση μη καλυμμένων θέσεων
+        if "uncovered" in st.session_state and st.session_state.uncovered:
+            st.markdown("### ❗ Μη Καλυμμένες Θέσεις")
+            st.dataframe(pd.DataFrame(st.session_state.uncovered), use_container_width=True)
         else:
-            st.success("🎉 Όλες οι θέσεις καλύφθηκαν.")
+            st.success("🎉 Όλες οι θέσεις καλύφθηκαν!")
 
 # --- Main ---
 def main():
