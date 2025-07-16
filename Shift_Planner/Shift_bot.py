@@ -226,50 +226,50 @@ def page_chatbot():
     st.dataframe(st.session_state.schedule)
 
     if intent == "remove_from_schedule":
-            if name and day:
-                st.success(f"🗓 Ο {name} θα αφαιρεθεί από το πρόγραμμα την {day}")
-                mask = (schedule_df['Ημέρα'].str.contains(day)) & (schedule_df['Υπάλληλος'].str.lower() == name.lower())
-                if not mask.any():
-                    st.warning(f"🔍 Ο {name} δεν έχει βάρδια για {day} ή το όνομα είναι λάθος.")
-                else:
-                    st.session_state.schedule = schedule_df[~mask].reset_index(drop=True)
-                    st.success(f"✅ Ο {name} αφαιρέθηκε από το πρόγραμμα για {day}.")
+        if name and day:
+            st.success(f"🗓 Ο {name} θα αφαιρεθεί από το πρόγραμμα την {day}")
+            mask = (schedule_df['Ημέρα'].str.contains(day)) & (schedule_df['Υπάλληλος'].str.lower() == name.lower())
+            if not mask.any():
+                st.warning(f"🔍 Ο {name} δεν έχει βάρδια για {day} ή το όνομα είναι λάθος.")
             else:
-                st.warning("⚠️ Δεν αναγνωρίστηκε ξεκάθαρα όνομα ή ημέρα.")
-
-        elif intent == "add_day_off":
-            if name and day:
-                st.info(f"🛌 Ρεπό καταχωρήθηκε για {name} την {day} (λογική υπό υλοποίηση)")
-            else:
-                st.warning("⚠️ Δεν αναγνωρίστηκε όνομα ή ημέρα.")
-
-        elif intent == "availability_change":
-            st.info(f"🔄 Αλλαγή διαθεσιμότητας για {name} (λειτουργία υπό υλοποίηση)")
-
-        elif intent == "change_shift":
-            st.info(f"🔁 Αλλαγή βάρδιας για {name} την {day} (λειτουργία υπό υλοποίηση)")
-
-        elif intent in ["ask_schedule_for_employee", "list_day_schedule"]:
-            if name:
-                emp_schedule = schedule_df[schedule_df['Υπάλληλος'].str.lower() == name.lower()]
-                if emp_schedule.empty:
-                    st.warning(f"🔍 Δεν βρέθηκε πρόγραμμα για {name}.")
-                else:
-                    if isinstance(day, list):
-                        filtered = emp_schedule[emp_schedule['Ημέρα'].apply(lambda d: any(d.startswith(d_) for d_ in day))]
-                    elif isinstance(day, str):
-                        filtered = emp_schedule[emp_schedule['Ημέρα'].str.contains(day)]
-                    else:
-                        filtered = emp_schedule
-                    if filtered.empty:
-                        st.info(f"ℹ️ Ο {name} δεν έχει βάρδια στις ζητούμενες ημέρες.")
-                    else:
-                        st.dataframe(filtered)
-            else:
-                st.warning("⚠️ Δεν αναγνωρίστηκε υπάλληλος.")
-
+                st.session_state.schedule = schedule_df[~mask].reset_index(drop=True)
+                st.success(f"✅ Ο {name} αφαιρέθηκε από το πρόγραμμα για {day}.")
         else:
-            st.error("❌ Δεν αναγνωρίστηκε η κατηγορία εντολής.")
+            st.warning("⚠️ Δεν αναγνωρίστηκε ξεκάθαρα όνομα ή ημέρα.")
+
+    elif intent == "add_day_off":
+        if name and day:
+            st.info(f"🛌 Ρεπό καταχωρήθηκε για {name} την {day} (λογική υπό υλοποίηση)")
+        else:
+            st.warning("⚠️ Δεν αναγνωρίστηκε όνομα ή ημέρα.")
+
+    elif intent == "availability_change":
+        st.info(f"🔄 Αλλαγή διαθεσιμότητας για {name} (λειτουργία υπό υλοποίηση)")
+
+    elif intent == "change_shift":
+        st.info(f"🔁 Αλλαγή βάρδιας για {name} την {day} (λειτουργία υπό υλοποίηση)")
+
+    elif intent in ["ask_schedule_for_employee", "list_day_schedule"]:
+        if name:
+            emp_schedule = schedule_df[schedule_df['Υπάλληλος'].str.lower() == name.lower()]
+            if emp_schedule.empty:
+                st.warning(f"🔍 Δεν βρέθηκε πρόγραμμα για {name}.")
+            else:
+                if isinstance(day, list):
+                    filtered = emp_schedule[emp_schedule['Ημέρα'].apply(lambda d: any(d.startswith(d_) for d_ in day))]
+                elif isinstance(day, str):
+                    filtered = emp_schedule[emp_schedule['Ημέρα'].str.contains(day)]
+                else:
+                    filtered = emp_schedule
+                if filtered.empty:
+                    st.info(f"ℹ️ Ο {name} δεν έχει βάρδια στις ζητούμενες ημέρες.")
+                else:
+                    st.dataframe(filtered)
+        else:
+            st.warning("⚠️ Δεν αναγνωρίστηκε υπάλληλος.")
+
+    else:
+        st.error("❌ Δεν αναγνωρίστηκε η κατηγορία εντολής.")
 
 
 # --- Page 2: Employees ---
