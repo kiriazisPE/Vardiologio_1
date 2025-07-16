@@ -199,6 +199,7 @@ def page_schedule():
     if st.button("▶️ Δημιουργία Προγράμματος"):
         data = []
         today = datetime.date.today()
+        warnings = defaultdict(list)  # Collect warnings by day and role
 
         for i, day in enumerate(DAYS * 4):  # Generate for 4 weeks (1 month)
             date = (today + datetime.timedelta(days=i)).strftime("%d/%m/%Y")
@@ -209,7 +210,7 @@ def page_schedule():
                         if role in e["roles"] and shift in e["availability"]
                     ]
                     if not eligible_employees:
-                        st.warning(f"⚠️ Δεν υπάρχουν διαθέσιμοι υπάλληλοι για τον ρόλο '{role}' στη βάρδια '{shift}' την ημέρα '{day}'.")
+                        warnings[day].append(role)
                     for e in eligible_employees:
                         data.append({
                             "Ημέρα": f"{day} ({date})",
@@ -217,6 +218,12 @@ def page_schedule():
                             "Υπάλληλος": e["name"],
                             "Καθήκοντα": role
                         })
+
+        # Display grouped warnings
+        if warnings:
+            st.warning("⚠️ Υπάρχουν προβλήματα με τις βάρδιες:")
+            for day, roles in warnings.items():
+                st.markdown(f"- **{day}**: Δεν υπάρχουν διαθέσιμοι υπάλληλοι για τους ρόλους: {', '.join(roles)}")
 
         if data:
             st.session_state.schedule = pd.DataFrame(data)
