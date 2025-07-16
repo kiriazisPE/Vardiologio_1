@@ -37,15 +37,31 @@ else:
             raise e
 
 def classify_intent(user_input: str, examples: dict) -> str:
-    best_match = ("", 0.0)  # (intent, similarity_score)
+    try:
+        system_prompt = """
+        Αναγνώρισε την πρόθεση της εντολής. Πιθανές προθέσεις:
+        - remove_from_schedule: Αφαίρεση από το πρόγραμμα
+        - add_day_off: Προσθήκη ρεπό
+        - availability_change: Αλλαγή διαθεσιμότητας
+        - change_shift: Αλλαγή βάρδιας
+        - ask_schedule_for_employee: Ερώτηση για πρόγραμμα υπαλλήλου
+        - list_day_schedule: Εμφάνιση προγράμματος ημέρας
+        
+        Απάντησε μόνο με το όνομα της πρόθεσης.
+        """
 
-    for intent, phrases in examples.items():
-        for phrase in phrases:
-            score = SequenceMatcher(None, user_input.lower(), phrase.lower()).ratio()
-            if score > best_match[1]:
-                best_match = (intent, score)
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_input}
+            ],
+            temperature=0.3
+        )
 
-    return best_match[0] if best_match[1] > 0.5 else "unknown"
+        return response.choices[0].message.content.strip()
+    except:
+        return "unknown"
 
 
 # --- Page Config ---
@@ -182,43 +198,44 @@ def extract_name_and_day(user_input: str, schedule_df: pd.DataFrame):
     text = user_input.lower()
     name = match_employee_name(user_input, schedule_df)
     
-    # Check for specific days (e.g., "δευτέρες", "τρίτες", κ.λπ.)
-    day_plural_match = re.search(r"(δευτέρες|τρίτες|τετάρτες|πέμπτες|παρασκευές|σάββατα|κυριακές)", text)
-    if day_plural_match:
-        day = day_plural_match.group(1)
-        # Convert plural to singular for matching
+    # Check for specific days in plural form first
+    day_plural_map = {
+        "δευτέρες": "Δευτέρα",
+        "τρίτες": "Τρίτη",
+        "τετάρτες": "Τετάρτη",
+        "πέμπτες": "Πέμπτη",
+        "παρασκευές": "Παρασκευή",
+        "σάββατα": "Σάββατο",
+        "κυριακές": "Κυριακή"
+    }
+    
+    # First check for plural forms
+    for plural, singular in day_plural_map.items():
+        if plural in text:
+            return name, singular
+    
+    # Then check for singular forms with their variations
+    day_pattern = r"(δευτέρα|τρίτη|τετάρτη|πέμπτη|παρασκευή|σάββατο|κυριακή)"
+    date_match = re.search(day_pattern, text)
+    if date_match:
+        day = date_match.group(1)
         day_map = {
-            "δευτέρες": "Δευτέρα",
-            "τρίτες": "Τρίτη",
-            "τετάρτες": "Τετάρτη",
-            "πέμπτες": "Πέμπτη",
-            "παρασκευές": "Παρασκευή",
-            "σάββατα": "Σάββατο",
-            "κυριακές": "Κυριακή"
+            "δευτέρα": "Δευτέρα",
+            "τρίτη": "Τρίτη",
+            "τετάρτη": "Τετάρτη",
+            "πέμπτη": "Πέμπτη",
+            "παρασκευή": "Παρασκευή",
+            "σάββατο": "Σάββατο",
+            "κυριακή": "Κυριακή"
         }
-        return name, day_map.get(day, day)
-
-    # ...existing relative keywords and other date matching code...
+        return name, day_map.get(day, day.capitalize())
+    
+    # Check for relative days (αύριο, μεθαύριο)
     for word, offset in relative_keywords.items():
         if word in text:
             target_date = datetime.datetime.now() + datetime.timedelta(days=offset)
             weekday = greek_weekdays[target_date.weekday()]
             return name, f"{weekday} ({target_date.strftime('%d/%m/%Y')})"
-
-    match_days = re.search(r"επόμεν(ες|ους)? (\d{1,2}) μέρ", text)
-    if match_days:
-        num_days = int(match_days.group(2))
-        dates = []
-        for i in range(num_days):
-            target_date = datetime.datetime.now() + datetime.timedelta(days=i)
-            weekday = greek_weekdays[target_date.weekday()]
-            dates.append(f"{weekday} ({target_date.strftime('%d/%m/%Y')})")
-        return name, dates
-
-    date_match = re.search(day_pattern, text)
-    if date_match:
-        day = date_match.group(1).capitalize()
-        return name, day
 
     return name, None
 # --- Page 4: Chatbot Commands --
@@ -227,239 +244,40 @@ def page_chatbot():
     st.markdown("Π.χ. Ο Κώστας δε μπορεί να δουλέψει αύριο")
     user_input = st.text_input("Εντολή", placeholder="π.χ. Ο Κώστας δε μπορεί να δουλέψει αύριο", key="chat_input")
     
-    # Initialize all variables at the start
-    intent = None
-    name = None
-    day = None
-    
-    # Check for schedule first
     if "schedule" not in st.session_state or st.session_state.schedule.empty:
         st.warning("📋 Δεν έχει δημιουργηθεί πρόγραμμα. Πήγαινε στη σελίδα 'Πρόγραμμα' για να δημιουργήσεις.")
         return
 
     schedule_df = st.session_state.schedule
-    
-    # Display current schedule
     st.markdown("### 📋 Πρόγραμμα Βαρδιών")
     st.dataframe(schedule_df)
 
-    # Process command only when button is clicked
     if st.button("💡 Εκτέλεση Εντολής", key="execute_command_intent"):
-        intent = classify_intent(user_input, intent_examples)
-        name, day = extract_name_and_day(user_input, schedule_df)
+        # Χρήση του AI για ανάλυση της εντολής
+        intent, name, day, extra_info = process_with_ai(user_input, schedule_df)
         
-        # Process different intents
+        if not intent:
+            st.error("❌ Δεν μπόρεσα να καταλάβω την εντολή.")
+            return
+
         if intent == "remove_from_schedule":
             if name and day:
-                st.success(f"🗓 Ο {name} θα αφαιρεθεί από το πρόγραμμα για {day}")
-                # Χρήση του str.contains για να πιάσει όλες τις εμφανίσεις της ημέρας
-                mask = (schedule_df['Ημέρα'].str.contains(day, case=False)) & (schedule_df['Υπάλληλος'].str.lower() == name.lower())
+                mask = (schedule_df['Ημέρα'].str.contains(day, case=False)) & \
+                       (schedule_df['Υπάλληλος'].str.lower() == name.lower())
                 if not mask.any():
                     st.warning(f"🔍 Ο {name} δεν έχει βάρδια για {day}")
                 else:
                     st.session_state.schedule = schedule_df[~mask].reset_index(drop=True)
-                    st.success(f"✅ Ο {name} αφαιρέθηκε από το πρόγραμμα για όλες τις {day}")
-            else:
-                st.warning("⚠️ Δεν αναγνωρίστηκε ξεκάθαρα όνομα ή ημέρα.")
+                    st.success(f"✅ Ο {name} αφαιρέθηκε από το πρόγραμμα για {day}")
 
-    elif intent == "add_day_off":
-        if name and day:
-            st.info(f"🛌 Ρεπό καταχωρήθηκε για {name} την {day} (λογική υπό υλοποίηση)")
-        else:
-            st.warning("⚠️ Δεν αναγνωρίστηκε όνομα ή ημέρα.")
+        elif intent == "change_shift":
+            if name and day and "shift" in extra_info:
+                # Εφαρμογή αλλαγής βάρδιας
+                mask = (schedule_df['Ημέρα'].str.contains(day, case=False)) & \
+                       (schedule_df['Υπάλληλος'].str.lower() == name.lower())
+                if mask.any():
+                    schedule_df.loc[mask, 'Βάρδια'] = extra_info["shift"]
+                    st.session_state.schedule = schedule_df
+                    st.success(f"✅ Η βάρδια του {name} άλλαξε σε {extra_info['shift']}")
 
-    elif intent == "availability_change":
-        st.info(f"🔄 Αλλαγή διαθεσιμότητας για {name} (λειτουργία υπό υλοποίηση)")
-
-    elif intent == "change_shift":
-        st.info(f"🔁 Αλλαγή βάρδιας για {name} την {day} (λειτουργία υπό υλοποίηση)")
-
-    elif intent in ["ask_schedule_for_employee", "list_day_schedule"]:
-        if name:
-            emp_schedule = schedule_df[schedule_df['Υπάλληλος'].str.lower() == name.lower()]
-            if emp_schedule.empty:
-                st.warning(f"🔍 Δεν βρέθηκε πρόγραμμα για {name}.")
-            else:
-                if isinstance(day, list):
-                    filtered = emp_schedule[emp_schedule['Ημέρα'].apply(lambda d: any(d.startswith(d_) for d_ in day))]
-                elif isinstance(day, str):
-                    filtered = emp_schedule[emp_schedule['Ημέρα'].str.contains(day)]
-                else:
-                    filtered = emp_schedule
-                if filtered.empty:
-                    st.info(f"ℹ️ Ο {name} δεν έχει βάρδια στις ζητούμενες ημέρες.")
-                else:
-                    st.dataframe(filtered)
-        else:
-            st.warning("⚠️ Δεν αναγνωρίστηκε υπάλληλος.")
-
-    else:
-        st.error("❌ Δεν αναγνωρίστηκε η κατηγορία εντολής.")
-
-
-# --- Page 2: Employees ---
-
-def page_employees():
-    st.header("👥 Προσθήκη ή Επεξεργασία Υπαλλήλων")
-
-    # Πρώτη χρήση του edit_index
-    if "edit_index" not in st.session_state:
-        st.session_state.edit_index = None
-
-    is_editing = st.session_state.edit_index is not None
-
-    # Default τιμές
-    if is_editing:
-        emp = st.session_state.employees[st.session_state.edit_index]
-        default_name = emp["name"]
-        default_roles = emp["roles"]
-        default_days_off = emp["days_off"]
-        default_availability = emp["availability"]
-    else:
-        default_name = ""
-        default_roles = []
-        default_days_off = 2
-        default_availability = []
-
-    with st.form("employee_form"):
-        name = st.text_input("Όνομα", value=default_name)
-        roles = st.multiselect("Ρόλοι", st.session_state.roles, default=default_roles)
-        days_off = st.slider("Ρεπό ανά εβδομάδα", 1, 3, default_days_off)
-        availability = st.multiselect("Διαθεσιμότητα για όλες τις ημέρες", st.session_state.active_shifts, default=default_availability)
-        submitted = st.form_submit_button("💾 Αποθήκευση")
-
-        if submitted:
-            name_lower = name.strip().lower()
-            existing_names = [
-                e["name"].strip().lower()
-                for i, e in enumerate(st.session_state.employees)
-                if i != st.session_state.edit_index
-            ]
-
-            if name_lower in existing_names:
-                st.error(f"⚠️ Ο υπάλληλος '{name}' υπάρχει ήδη.")
-            elif name:
-                employee_data = {
-                    "name": name.strip(),
-                    "roles": roles,
-                    "days_off": days_off,
-                    "availability": availability
-                }
-                if is_editing:
-                    st.session_state.employees[st.session_state.edit_index] = employee_data
-                    st.success(f"✅ Ο υπάλληλος '{name}' ενημερώθηκε.")
-                else:
-                    st.session_state.employees.append(employee_data)
-                    st.success(f"✅ Ο υπάλληλος '{name}' προστέθηκε.")
-                # Καθαρισμός edit mode
-                st.session_state.edit_index = None
-
-    # Αν edit_index είναι None (όχι σε κατάσταση επεξεργασίας)
-    if st.session_state.edit_index is None and st.session_state.employees:
-        st.markdown("### Εγγεγραμμένοι Υπάλληλοι")
-        for i, emp in enumerate(st.session_state.employees):
-            with st.expander(f"👤 {emp['name']}"):
-                col1, col2 = st.columns([4, 1])
-                with col1:
-                    st.markdown(f"""
-                **Ρόλοι:** {', '.join(emp['roles'])}  
-                **Ρεπό:** {emp['days_off']}  
-                **Διαθεσιμότητα:** {', '.join(emp['availability'])}
-                """)
-
-                with col2:
-                    if st.button("✏️ Επεξεργασία", key=f"edit_{i}"):
-                        st.session_state.edit_index = i
-                    if st.button("🗑️ Διαγραφή", key=f"delete_{i}"):
-                        del st.session_state.employees[i]
-                        st.experimental_set_query_params()  # ασφαλές refresh
-                        st.stop()
-
-
-# --- Page 3: Schedule Generation ---
-def page_schedule():
-    st.header("🧠 Δημιουργία Προγράμματος")
-    if not st.session_state.employees:
-        st.warning("Προσθέστε πρώτα υπαλλήλους.")
-        return
-
-    if st.button("▶️ Δημιουργία Προγράμματος"):
-        data = []
-        coverage = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
-        assigned = defaultdict(lambda: defaultdict(set))
-        today = datetime.date.today()
-        for i, day in enumerate(DAYS):
-            date = (today + datetime.timedelta(days=i)).strftime("%d/%m/%Y")
-            for shift in st.session_state.active_shifts:
-                for role in st.session_state.roles:
-                    count = 0
-                    for e in st.session_state.employees:
-                        if role in e["roles"] and shift in e["availability"]:
-                            if (shift, role) in assigned[day][e["name"]]:
-                                continue
-                            data.append({"Ημέρα": f"{day} ({date})", "Βάρδια": shift, "Υπάλληλος": e['name'], "Καθήκοντα": role})
-                            assigned[day][e["name"]].add((shift, role))
-                            count += 1
-                            if count >= st.session_state.rules["max_employees_per_position"].get(role, 1):
-                                break
-                    coverage[day][shift][role] = count
-        st.session_state.schedule = pd.DataFrame(data)
-        st.session_state.coverage = coverage
-        st.success("✅ Το πρόγραμμα δημιουργήθηκε!")
-
-    if not st.session_state.schedule.empty:
-        st.dataframe(st.session_state.schedule)
-        csv = st.session_state.schedule.to_csv(index=False).encode("utf-8")
-        st.download_button("📥 Εξαγωγή CSV", csv, file_name="programma.csv", mime="text/csv")
-
-        st.markdown("### ❗Μη Καλυμμένες Θέσεις")
-        uncovered = []
-        for day, shifts in st.session_state.coverage.items():
-            for shift, roles in shifts.items():
-                for role, count in roles.items():
-                    needed = st.session_state.rules["max_employees_per_position"].get(role, 1)
-                    if count < needed:
-                        uncovered.append({"Ημέρα": day, "Βάρδια": shift, "Ρόλος": role, "Ανεπάρκεια": needed - count})
-        if uncovered:
-            st.dataframe(pd.DataFrame(uncovered))
-        else:
-            st.success("🎉 Όλες οι θέσεις καλύφθηκαν.")
-
-
-# Συνάρτηση αλλαγής διαθεσιμότητας στον υπάλληλο ---
-def apply_availability_change(name: str, shift_day: str):
-    if "employees" not in st.session_state:
-        return
-
-    shift_day_clean = shift_day.split(" (")[0] if "(" in shift_day else shift_day
-
-    for emp in st.session_state.employees:
-        if emp["name"].lower() == name.lower():
-            if shift_day_clean in greek_weekdays:
-                if "unavailable_days" not in emp:
-                    emp["unavailable_days"] = []
-                if shift_day_clean not in emp["unavailable_days"]:
-                    emp["unavailable_days"].append(shift_day_clean)
-            break
-
-    # --- Αφαίρεση βαρδιών του υπαλλήλου από το πρόγραμμα ---
-    if "schedule" in st.session_state and not st.session_state.schedule.empty:
-        schedule_df = st.session_state.schedule
-        st.session_state.schedule = schedule_df[~(
-            (schedule_df['Υπάλληλος'].str.lower() == name.lower()) &
-            (schedule_df['Ημέρα'].str.startswith(shift_day_clean))
-        )].reset_index(drop=True)
-
-        # --- Εμφάνιση ενημερωμένου προγράμματος κάτω από το chatbot ---
-        st.markdown("### 📋 Ενημερωμένο Πρόγραμμα")
-        st.dataframe(st.session_state.schedule)
-
-# --- Main ---
-def main():
-    init_session()
-    navigation()
-    page_funcs = [page_business, page_employees, page_schedule, page_chatbot]
-    page_funcs[st.session_state.page]()
-
-if __name__ == "__main__":
-    main()
+        # ... υπόλοιπα intents ...
