@@ -97,6 +97,7 @@ def init_session():
         "max_weekly_hours": 40,
     })
     st.session_state.setdefault("employees", [])
+    st.session_state.setdefault("business_stage", 1)  # Initialize business_stage
 
 # --- Navigation ---
 def navigation():
@@ -335,7 +336,7 @@ def page_schedule():
                         eligible_df = pd.DataFrame(eligible_employees)
                         st.table(eligible_df)
                     else:
-                        st.warning("Δεν υπάρχουν διαθέσιμοι υπάλληλοι.")
+                        st.warning("Δεν υπάρχουν διαθέσιμοι υπαλλήλοι.")
 
                     # Ταξινόμηση με βάση πόσες φορές έχουν ήδη ανατεθεί
                     sorted_employees = sorted(eligible_employees, key=lambda e: assignment_count[e["name"]])
