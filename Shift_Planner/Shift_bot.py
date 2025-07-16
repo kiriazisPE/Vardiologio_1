@@ -483,3 +483,36 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+st.session_state.employees = [
+    {
+        "name": "Μπάμπης",
+        "roles": ["Ταμείο"],
+        "days_off": 2,
+        "availability": ["Πρωί", "Απόγευμα"]
+    },
+    {
+        "name": "Αλέξης",
+        "roles": ["Σερβιτόρος"],
+        "days_off": 2,
+        "availability": ["Πρωί", "Βράδυ"]
+    },
+    {
+        "name": "Τάσος",
+        "roles": ["Μάγειρας"],
+        "days_off": 2,
+        "availability": ["Απόγευμα", "Βράδυ"]
+    },
+    {
+        "name": "Πέτρος",
+        "roles": ["Barista"],
+        "days_off": 2,
+        "availability": ["Πρωί"]
+    },
+    {
+        "name": "Άλκης",
+        "roles": ["Καθαριστής"],
+        "days_off": 2,
+        "availability": ["Απόγευμα"]
+    }
+]
