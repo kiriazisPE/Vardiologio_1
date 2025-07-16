@@ -57,11 +57,11 @@ def process_with_ai(user_input: str, context: str = "") -> dict:
         system_prompt = f"""
         Είσαι βοηθός για ένα σύστημα διαχείρισης βαρδιών. Αναλύεις εντολές στα ελληνικά.
         Πρέπει να εξάγεις τις εξής πληροφορίες:
-        1. intent: Τύπος εντολής (remove_from_schedule, add_day_off, availability_change, change_shift, ask_schedule_for_employee, list_day_schedule)
-        2. name: Το όνομα του υπαλλήλου
-        3. day: Η ημέρα/ημερομηνία
-        4. extra_info: Επιπλέον πληροφορίες (π.χ. βάρδια)
-        
+        1. intent: Τύπος εντολής (remove_from_schedule, add_day_off, availability_change, change_shift, ask_schedule_for_employee, list_day_schedule, change_company_settings, employee_interaction_rule)
+        2. name: Το όνομα του υπαλλήλου (αν υπάρχει)
+        3. day: Η ημέρα/ημερομηνία (αν υπάρχει)
+        4. extra_info: Επιπλέον πληροφορίες (π.χ. βάρδια, κανόνες αλληλεπίδρασης, αλλαγές στις ρυθμίσεις)
+
         Context: {context}
         Απάντησε σε JSON μορφή.
         """
@@ -201,19 +201,32 @@ def page_chatbot():
         st.warning("📋 Δεν έχει δημιουργηθεί πρόγραμμα. Πήγαινε στη σελίδα 'Πρόγραμμα' για να δημιουργήσεις.")
         return
 
-    user_input = st.text_input("Γράψε την εντολή σου εδώ...", placeholder="Π.χ. Ο Κώστας δε μπορεί να δουλέψει αύριο", help="Προσθέστε μια εντολή για να επεξεργαστεί το πρόγραμμα.")
+    user_input = st.text_input("Γράψε την εντολή σου εδώ...", placeholder="Π.χ. Υπάρχει πάρτι αύριο, πρόσθεσε 2 μάγειρες και 1 μπάρμαν", help="Προσθέστε μια εντολή για να επεξεργαστεί το πρόγραμμα.")
     if st.button("💡 Εκτέλεση Εντολής"):
         result = process_with_ai(user_input, context=json.dumps(st.session_state.schedule.to_dict()))
         if "error" in result:
             st.error("❌ Δεν μπόρεσα να καταλάβω την εντολή.")
         else:
-            # Process the extracted intent and update the schedule
+            # Process the extracted intent and update the schedule or settings
             intent = result.get("intent")
             name = result.get("name")
             day = result.get("day")
             extra_info = result.get("extra_info")
 
-            if intent == "remove_from_schedule":
+            if intent == "change_company_settings":
+                # Update company settings dynamically
+                settings_update = json.loads(extra_info)  # Parse the settings update
+                for role, count in settings_update.items():
+                    st.session_state.rules["max_employees_per_position"][role] += count
+                st.success(f"✅ Οι ρυθμίσεις της εταιρείας ενημερώθηκαν: {settings_update}")
+
+            elif intent == "employee_interaction_rule":
+                # Add interaction rules between employees
+                interaction_rule = json.loads(extra_info)  # Parse the interaction rule
+                st.session_state.rules.setdefault("employee_interactions", []).append(interaction_rule)
+                st.success(f"✅ Προστέθηκε κανόνας αλληλεπίδρασης: {interaction_rule}")
+
+            elif intent == "remove_from_schedule":
                 st.session_state.schedule = st.session_state.schedule[
                     ~((st.session_state.schedule["Υπάλληλος"] == name) & (st.session_state.schedule["Ημέρα"].str.contains(day)))
                 ]
