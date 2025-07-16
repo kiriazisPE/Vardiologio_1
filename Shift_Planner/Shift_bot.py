@@ -36,7 +36,6 @@ else:
             print(content[:300])
             raise e
 
-
 def classify_intent(user_input: str, examples: dict) -> str:
     best_match = ("", 0.0)  # (intent, similarity_score)
 
