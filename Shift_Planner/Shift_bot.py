@@ -79,6 +79,7 @@ relative_keywords = {
     "μεθαύριο": 2
 }
 
+# Regex που πιάνει και πληθυντικούς
 day_pattern = r"(δευτέρα(?:ς|ες)?|τρίτη(?:ς|ες)?|τετάρτη(?:ς|ες)?|πέμπτη(?:ς|ες)?|παρασκευή(?:ς|ες)?|σάββατο(?:υ|α)?|κυριακή(?:ς|ες)?)"
 date_pattern = r"\d{2}/\d{2}/\d{4}"
 combined_date_pattern = fr"{day_pattern} ({{date_pattern}})"
@@ -161,6 +162,16 @@ def page_business():
             )
 
         st.success("✅ Οι ρυθμίσεις αποθηκεύτηκαν.")
+
+
+
+
+def match_employee_name(user_input: str, schedule_df: pd.DataFrame) -> str:
+    all_names = schedule_df['Υπάλληλος'].unique()
+    for name in all_names:
+        if name.lower() in user_input.lower():
+            return name
+    return None
 
 # --- Page 4: Chatbot Commands ---
 def extract_name_and_day(user_input: str, schedule_df: pd.DataFrame):
@@ -379,6 +390,24 @@ def page_schedule():
             st.dataframe(pd.DataFrame(uncovered))
         else:
             st.success("🎉 Όλες οι θέσεις καλύφθηκαν.")
+
+
+# Συνάρτηση αλλαγής διαθεσιμότητας στον υπάλληλο ---
+def apply_availability_change(name: str, shift_day: str):
+    if "employees" not in st.session_state:
+        return
+
+    shift_day_clean = shift_day.split(" (")[0] if "(" in shift_day else shift_day
+
+    for emp in st.session_state.employees:
+        if emp["name"].lower() == name.lower():
+            # αφαίρεση διαθεσιμότητας για τη μέρα
+            if shift_day_clean in greek_weekdays:
+                if "unavailable_days" not in emp:
+                    emp["unavailable_days"] = []
+                if shift_day_clean not in emp["unavailable_days"]:
+                    emp["unavailable_days"].append(shift_day_clean)
+            break
 
 # --- Main ---
 def main():
