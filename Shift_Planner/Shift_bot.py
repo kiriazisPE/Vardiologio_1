@@ -219,8 +219,13 @@ def page_chatbot():
         schedule_df = st.session_state.schedule
         name, day = extract_name_and_day(user_input, schedule_df)
 
+        # ...existing bot logic...
 
-        if intent == "remove_from_schedule":
+    # Εμφάνιση προγράμματος πάντα κάτω από το bot
+    st.markdown("### 📋 Πρόγραμμα Βαρδιών")
+    st.dataframe(st.session_state.schedule)
+
+    if intent == "remove_from_schedule":
             if name and day:
                 st.success(f"🗓 Ο {name} θα αφαιρεθεί από το πρόγραμμα την {day}")
                 mask = (schedule_df['Ημέρα'].str.contains(day)) & (schedule_df['Υπάλληλος'].str.lower() == name.lower())
@@ -412,7 +417,7 @@ def apply_availability_change(name: str, shift_day: str):
                     emp["unavailable_days"].append(shift_day_clean)
             break
 
-    # Αφαίρεση βαρδιών του υπαλλήλου από το πρόγραμμα ---
+    # --- Αφαίρεση βαρδιών του υπαλλήλου από το πρόγραμμα ---
     if "schedule" in st.session_state and not st.session_state.schedule.empty:
         schedule_df = st.session_state.schedule
         st.session_state.schedule = schedule_df[~(
@@ -420,6 +425,9 @@ def apply_availability_change(name: str, shift_day: str):
             (schedule_df['Ημέρα'].str.startswith(shift_day_clean))
         )].reset_index(drop=True)
 
+        # --- Εμφάνιση ενημερωμένου προγράμματος κάτω από το chatbot ---
+        st.markdown("### 📋 Ενημερωμένο Πρόγραμμα")
+        st.dataframe(st.session_state.schedule)
 
 # --- Main ---
 def main():
