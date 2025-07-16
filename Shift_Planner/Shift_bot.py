@@ -130,8 +130,7 @@ def init_session():
     })
     st.session_state.setdefault("business_stage", 1)
 
-
- if "employees" not in st.session_state or not st.session_state.employees:
+    if "employees" not in st.session_state or not st.session_state.employees:
         st.session_state.employees = [
             {
                 "name": "Μπάμπης",
