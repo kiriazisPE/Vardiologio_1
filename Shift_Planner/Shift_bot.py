@@ -384,28 +384,53 @@ def page_schedule():
         return
 
     if st.button("▶️ Δημιουργία Προγράμματος"):
-        data = []
-        coverage = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
-        assigned = defaultdict(lambda: defaultdict(set))
-        today = datetime.date.today()
-        for i, day in enumerate(DAYS):
-            date = (today + datetime.timedelta(days=i)).strftime("%d/%m/%Y")
-            for shift in st.session_state.active_shifts:
-                for role in st.session_state.roles:
-                    count = 0
-                    for e in st.session_state.employees:
-                        if role in e["roles"] and shift in e["availability"]:
-                            if (shift, role) in assigned[day][e["name"]]:
-                                continue
-                            data.append({"Ημέρα": f"{day} ({date})", "Βάρδια": shift, "Υπάλληλος": e['name'], "Καθήκοντα": role})
-                            assigned[day][e["name"]].add((shift, role))
-                            count += 1
-                            if count >= st.session_state.rules["max_employees_per_position"].get(role, 1):
-                                break
-                    coverage[day][shift][role] = count
-        st.session_state.schedule = pd.DataFrame(data)
-        st.session_state.coverage = coverage
-        st.success("✅ Το πρόγραμμα δημιουργήθηκε!")
+    data = []
+    coverage = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+    assigned = defaultdict(lambda: defaultdict(set))
+    today = datetime.date.today()
+
+    # Μετρητής αναθέσεων για ισορροπία
+    assignment_count = defaultdict(int)
+
+    for i, day in enumerate(DAYS):
+        date = (today + datetime.timedelta(days=i)).strftime("%d/%m/%Y")
+        for shift in st.session_state.active_shifts:
+            for role in st.session_state.roles:
+                needed = st.session_state.rules["max_employees_per_position"].get(role, 1)
+                count = 0
+
+                # Φιλτράρισμα υπαλλήλων με βάση διαθεσιμότητα και ρόλο
+                eligible_employees = [
+                    e for e in st.session_state.employees
+                    if role in e["roles"] and shift in e["availability"]
+                ]
+
+                # Ταξινόμηση με βάση πόσες φορές έχουν ήδη ανατεθεί
+                sorted_employees = sorted(eligible_employees, key=lambda e: assignment_count[e["name"]])
+
+                for e in sorted_employees:
+                    name = e["name"]
+                    # Αποφυγή διπλής ανάθεσης σε ίδια βάρδια/ρόλο
+                    if (shift, role) in assigned[day][name]:
+                        continue
+                    data.append({
+                        "Ημέρα": f"{day} ({date})",
+                        "Βάρδια": shift,
+                        "Υπάλληλος": name,
+                        "Καθήκοντα": role
+                    })
+                    assigned[day][name].add((shift, role))
+                    assignment_count[name] += 1
+                    count += 1
+                    if count >= needed:
+                        break
+
+                coverage[day][shift][role] = count
+
+    st.session_state.schedule = pd.DataFrame(data)
+    st.session_state.coverage = coverage
+    st.success("✅ Το πρόγραμμα δημιουργήθηκε!")
+
 
     if not st.session_state.schedule.empty:
         st.dataframe(st.session_state.schedule)
