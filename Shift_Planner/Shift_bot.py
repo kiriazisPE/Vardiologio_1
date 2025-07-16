@@ -372,12 +372,62 @@ def page_employees():
                         st.experimental_set_query_params()  # Safe refresh
                         st.stop()
 
+# --- Page 3: Schedule Generation ---
+def page_schedule():
+    st.header("🧠 Δημιουργία Προγράμματος")
+    if not st.session_state.employees:
+        st.warning("Προσθέστε πρώτα υπαλλήλους.")
+        return
+
+    if st.button("▶️ Δημιουργία Προγράμματος"):
+        data = []
+        coverage = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+        assigned = defaultdict(lambda: defaultdict(set))
+        today = datetime.date.today()
+        for i, day in enumerate(DAYS):
+            date = (today + datetime.timedelta(days=i)).strftime("%d/%m/%Y")
+            for shift in st.session_state.active_shifts:
+                for role in st.session_state.roles:
+                    count = 0
+                    for e in st.session_state.employees:
+                        if role in e["roles"] and shift in e["availability"]:
+                            if (shift, role) in assigned[day][e["name"]]:
+                                continue
+                            data.append({"Ημέρα": f"{day} ({date})", "Βάρδια": shift, "Υπάλληλος": e['name'], "Καθήκοντα": role})
+                            assigned[day][e["name"]].add((shift, role))
+                            count += 1
+                            if count >= st.session_state.rules["max_employees_per_position"].get(role, 1):
+                                break
+                    coverage[day][shift][role] = count
+        st.session_state.schedule = pd.DataFrame(data)
+        st.session_state.coverage = coverage
+        st.success("✅ Το πρόγραμμα δημιουργήθηκε!")
+
+    if not st.session_state.schedule.empty:
+        st.dataframe(st.session_state.schedule)
+        csv = st.session_state.schedule.to_csv(index=False).encode("utf-8")
+        st.download_button("📥 Εξαγωγή CSV", csv, file_name="programma.csv", mime="text/csv")
+
+        st.markdown("### ❗Μη Καλυμμένες Θέσεις")
+        uncovered = []
+        for day, shifts in st.session_state.coverage.items():
+            for shift, roles in shifts.items():
+                for role, count in roles.items():
+                    needed = st.session_state.rules["max_employees_per_position"].get(role, 1)
+                    if count < needed:
+                        uncovered.append({"Ημέρα": day, "Βάρδια": shift, "Ρόλος": role, "Ανεπάρκεια": needed - count})
+        if uncovered:
+            st.dataframe(pd.DataFrame(uncovered))
+        else:
+            st.success("🎉 Όλες οι θέσεις καλύφθηκαν.")
+
 # --- Main ---
 def main():
     init_session()
     navigation()
     page_funcs = [page_business, page_employees, page_schedule, page_chatbot]
     page_funcs[st.session_state.page]()
+
 
 if __name__ == "__main__":
     main()
