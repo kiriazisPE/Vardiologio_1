@@ -46,13 +46,13 @@ def process_with_ai(user_input: str, schedule_df: pd.DataFrame) -> tuple:
         Απάντησε σε JSON μορφή.
         """
 
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Ανάλυσε την εξής εντολή: {user_input}"}
-            ]
-        )
+    ]
+)
 
         result = json.loads(response.choices[0].message.content)
         return (
