@@ -51,11 +51,10 @@ def process_with_ai(user_input: str, schedule_df: pd.DataFrame) -> tuple:
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Ανάλυσε την εξής εντολή: {user_input}"}
-            ],
-            temperature=0.7
+            ]
         )
 
-        result = json.loads(response.choices[0].message.content)
+        result = json.loads(response['choices'][0]['message']['content'])
         return (
             result.get("intent"),
             result.get("name"),
