@@ -54,13 +54,16 @@ def process_with_ai(user_input: str, schedule_df: pd.DataFrame) -> tuple:
             ]
         )
 
-        result = json.loads(response['choices'][0]['message']['content'])
+        result = json.loads(response.choices[0].message.content)
         return (
             result.get("intent"),
             result.get("name"),
             result.get("day"),
             result.get("extra_info", {})
         )
+    except AttributeError:
+        st.error("Η μέθοδος ChatCompletion δεν υποστηρίζεται. Ενημερώστε το OpenAI SDK ή χρησιμοποιήστε την κατάλληλη μέθοδο.")
+        return None, None, None, {}
     except Exception as e:
         st.error(f"Σφάλμα κατά την επεξεργασία: {str(e)}")
         return None, None, None, {}
