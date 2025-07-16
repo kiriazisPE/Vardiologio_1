@@ -166,6 +166,11 @@ def page_business():
 
 
 
+
+day_pattern = r"(δευτέρα(?:ς|ες)?|τρίτη(?:ς|ες)?|τετάρτη(?:ς|ες)?|πέμπτη(?:ς|ες)?|παρασκευή(?:ς|ες)?|σάββατο(?:υ|α)?|κυριακή(?:ς|ες)?)"
+date_pattern = r"\d{2}/\d{2}/\d{4}"
+combined_date_pattern = fr"{day_pattern} ({{date_pattern}})"
+
 def match_employee_name(user_input: str, schedule_df: pd.DataFrame) -> str:
     all_names = schedule_df['Υπάλληλος'].unique()
     for name in all_names:
@@ -173,7 +178,6 @@ def match_employee_name(user_input: str, schedule_df: pd.DataFrame) -> str:
             return name
     return None
 
-# --- Page 4: Chatbot Commands ---
 def extract_name_and_day(user_input: str, schedule_df: pd.DataFrame):
     text = user_input.lower()
     name = match_employee_name(user_input, schedule_df)
@@ -200,7 +204,7 @@ def extract_name_and_day(user_input: str, schedule_df: pd.DataFrame):
         return name, day
 
     return name, None
-
+# --- Page 4: Chatbot Commands --
 def page_chatbot():
     st.title("🍊 Chatbot Εντολές")
     st.markdown("Π.χ. Ο Κώστας δε μπορεί να δουλέψει αύριο")
@@ -401,13 +405,21 @@ def apply_availability_change(name: str, shift_day: str):
 
     for emp in st.session_state.employees:
         if emp["name"].lower() == name.lower():
-            # αφαίρεση διαθεσιμότητας για τη μέρα
             if shift_day_clean in greek_weekdays:
                 if "unavailable_days" not in emp:
                     emp["unavailable_days"] = []
                 if shift_day_clean not in emp["unavailable_days"]:
                     emp["unavailable_days"].append(shift_day_clean)
             break
+
+    # Αφαίρεση βαρδιών του υπαλλήλου από το πρόγραμμα ---
+    if "schedule" in st.session_state and not st.session_state.schedule.empty:
+        schedule_df = st.session_state.schedule
+        st.session_state.schedule = schedule_df[~(
+            (schedule_df['Υπάλληλος'].str.lower() == name.lower()) &
+            (schedule_df['Ημέρα'].str.startswith(shift_day_clean))
+        )].reset_index(drop=True)
+
 
 # --- Main ---
 def main():
