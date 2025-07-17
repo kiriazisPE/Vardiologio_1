@@ -57,14 +57,23 @@ def process_with_ai(user_input: str, context: str = "") -> dict:
         system_prompt = f"""
         Είσαι βοηθός για ένα σύστημα διαχείρισης βαρδιών. Αναλύεις εντολές στα ελληνικά.
         Πρέπει να εξάγεις τις εξής πληροφορίες:
-        1. intent: Τύπος εντολής (remove_from_schedule, add_day_off, availability_change, change_shift, ask_schedule_for_employee, list_day_schedule, change_company_settings, employee_interaction_rule)
+        1. intent: Τύπος εντολής (remove_from_schedule, add_day_off, availability_change, change_shift, ask_schedule_for_employee, list_day_schedule, change_company_settings, employee_interaction_rule, set_day_unavailable)
         2. name: Το όνομα του υπαλλήλου (αν υπάρχει)
         3. day: Η ημέρα/ημερομηνία (αν υπάρχει)
         4. extra_info: Επιπλέον πληροφορίες (π.χ. βάρδια, κανόνες αλληλεπίδρασης, αλλαγές στις ρυθμίσεις)
 
         Context: {context}
         Απάντησε σε JSON μορφή.
+
+        Αν δεν μπορείς να καταλάβεις ή να εντοπίσεις κάποια πληροφορία, απάντησε με:
+        {{
+            "intent": null,
+            "name": null,
+            "day": null,
+            "extra_info": null
+        }}
         """
+
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
