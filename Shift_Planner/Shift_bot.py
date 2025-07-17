@@ -391,11 +391,11 @@ def page_chatbot():
         st.dataframe(st.session_state.schedule, use_container_width=True)
 
     if st.session_state.chat_history:
-    st.markdown("### 💬 Ιστορικό Εντολών")
-    for entry in st.session_state.chat_history[::-1]:
-        st.markdown(f"**👤 Εντολή:** {entry['user']}")
-        st.markdown(f"**🤖 AI:** {entry['ai_response']}")
-        st.markdown("---")
+        st.markdown("### 💬 Ιστορικό Εντολών")
+        for entry in st.session_state.chat_history[::-1]:
+            st.markdown(f"**👤 Εντολή:** {entry['user']}")
+            st.markdown(f"**🤖 AI:** {entry['ai_response']}")
+            st.markdown("---")
 
 
 
