@@ -94,32 +94,61 @@ def navigation():
 
 # --- Page 1: Business Setup ---
 def page_business():
-    """Business setup page."""
+    """📊 Σελίδα Ρυθμίσεων Επιχείρησης"""
     st.header("🏢 Ρυθμίσεις Επιχείρησης")
-    st.session_state.business_name = st.text_input("Εισάγετε το όνομα της επιχείρησης", st.session_state.business_name, help="Προσθέστε το όνομα της επιχείρησης σας.")
 
-    st.markdown("### 📆 Επιλέξτε ενεργές βάρδιες")
-    st.session_state.active_shifts = st.multiselect("Βάρδιες που χρησιμοποιεί η επιχείρηση", ALL_SHIFTS, default=st.session_state.active_shifts, help="Επιλέξτε τις βάρδιες που ισχύουν για την επιχείρησή σας.")
-
-    st.markdown("### 🧱 Επιλογή Ρόλων Επιχείρησης")
-    st.session_state.roles = st.multiselect("Επιλέξτε ρόλους που απαιτούνται στην επιχείρηση", DEFAULT_ROLES + EXTRA_ROLES, default=DEFAULT_ROLES, help="Προσθέστε ή αφαιρέστε ρόλους ανάλογα με τις ανάγκες σας.")
-
-    st.markdown("### 🛠️ Κανόνες Επιχείρησης")
-    with st.expander("👥 Μέγιστος αριθμός υπαλλήλων ανά βάρδια"):
-        st.session_state.rules["max_employees_per_shift"] = st.number_input(
-            "Μέγιστος αριθμός", min_value=1, max_value=20, value=st.session_state.rules["max_employees_per_shift"], help="Ορίστε τον μέγιστο αριθμό υπαλλήλων ανά βάρδια."
+    # --- Εισαγωγή ονόματος επιχείρησης ---
+    with st.container():
+        st.subheader("🔖 Όνομα Επιχείρησης")
+        st.session_state.business_name = st.text_input(
+            "Όνομα επιχείρησης",
+            st.session_state.business_name,
+            placeholder="π.χ. Καφέ Λιμανάκι",
+            help="Προσθέστε το όνομα της επιχείρησής σας."
         )
 
-    for role in st.session_state.roles:
-        with st.expander(f"👤 Μέγιστοι {role} ανά βάρδια"):
-            st.session_state.rules["max_employees_per_position"][role] = st.number_input(
-                f"{role}", min_value=0, max_value=10, value=st.session_state.rules["max_employees_per_position"].get(role, 2), key=f"role_{role}", help=f"Ορίστε τον μέγιστο αριθμό υπαλλήλων για τον ρόλο '{role}'."
-            )
+    # --- Επιλογή ενεργών βαρδιών ---
+    with st.container():
+        st.subheader("📆 Ενεργές Βάρδιες")
+        st.session_state.active_shifts = st.multiselect(
+            "Επιλέξτε ποιες βάρδιες χρησιμοποιεί η επιχείρηση",
+            ALL_SHIFTS,
+            default=st.session_state.active_shifts,
+            help="Π.χ. αν δεν έχετε βραδινή, αφαιρέστε τη."
+        )
 
-    # AI Validation for Business Rules
-    if st.button("🔍 Επαλήθευση Ρυθμίσεων"):
-        ai_result = process_with_ai("Επαλήθευσε τις ρυθμίσεις επιχείρησης.", context=json.dumps(st.session_state.rules))
-        st.json(ai_result)
+    # --- Επιλογή ρόλων ---
+    with st.container():
+        st.subheader("👔 Ρόλοι στην Επιχείρηση")
+        st.session_state.roles = st.multiselect(
+            "Ποιοι ρόλοι απαιτούνται στην επιχείρηση",
+            DEFAULT_ROLES + EXTRA_ROLES,
+            default=DEFAULT_ROLES,
+            help="Επιλέξτε όσους ρόλους χρειάζεστε για το πρόγραμμα βαρδιών."
+        )
+
+    # --- Κανόνες ανά βάρδια και ρόλο ---
+    st.subheader("⚙️ Κανόνες Βαρδιών & Καθήκοντα")
+
+    with st.expander("👥 Μέγιστος αριθμός υπαλλήλων ανά βάρδια", expanded=True):
+        st.session_state.rules["max_employees_per_shift"] = st.slider(
+            "Μέγιστος συνολικός αριθμός υπαλλήλων ανά βάρδια",
+            min_value=1,
+            max_value=20,
+            value=st.session_state.rules["max_employees_per_shift"],
+            help="Αφορά όλους τους ρόλους μαζί."
+        )
+
+    with st.expander("📌 Μέγιστος αριθμός υπαλλήλων ανά ρόλο ανά βάρδια", expanded=False):
+        for role in st.session_state.roles:
+            st.session_state.rules["max_employees_per_position"][role] = st.number_input(
+                f"👤 {role}",
+                min_value=0,
+                max_value=10,
+                value=st.session_state.rules["max_employees_per_position"].get(role, 2),
+                key=f"role_{role}",
+                help=f"Πόσα άτομα επιτρέπονται το πολύ για τον ρόλο '{role}' ανά βάρδια."
+            )
 
 # --- Page 2: Employees ---
 def page_employees():
@@ -282,7 +311,7 @@ def page_chatbot():
     st.header("🍊 Chatbot Εντολές")
 
     if "schedule" not in st.session_state or st.session_state.schedule.empty:
-        st.warning("📋 Δεν έχει δημιουργηθεί πρόγραμμα. Πήγαινε στη σελίδα 'Πρόγραμμα' για να δημιουργήσεις.")
+        st.warning("📋 Δεν έχει δημιουργηθεί πρόγραμμα. Πήγαινε στη σελίδα ' Πρόγραμμα ' για να δημιουργήσεις.")
         return
 
     user_input = st.text_input(
@@ -290,8 +319,10 @@ def page_chatbot():
         placeholder="Π.χ. Ο Κώστας δε μπορεί να δουλέψει Δευτέρες",
         help="Προσθέστε μια εντολή για να επεξεργαστεί το πρόγραμμα."
     )
-    if st.button("💡 Εκτέλεση Εντολής"):
+
+    if st.button("💡 Εκτέλεση Εντολής") and user_input.strip():
         result = process_with_ai(user_input, context=json.dumps(st.session_state.schedule.to_dict()))
+
         if "error" in result:
             st.error("❌ Δεν μπόρεσα να καταλάβω την εντολή.")
         else:
@@ -304,25 +335,21 @@ def page_chatbot():
                 updated = False
                 for emp in st.session_state.employees:
                     if emp["name"] == name:
-                        emp["unavailable_days"] = emp.get("unavailable_days", [])
-                        if day not in emp["unavailable_days"]:
+                        emp.setdefault("unavailable_days", [])
+                        if day and day not in emp["unavailable_days"]:
                             emp["unavailable_days"].append(day)
                             st.success(f"🚫 Ο υπάλληλος '{name}' δεν θα είναι διαθέσιμος τις {day}.")
                             updated = True
-                        else:
-                            st.info(f"ℹ️ Ο υπάλληλος '{name}' είναι ήδη μη διαθέσιμος τις {day}.")
+                        elif day:
+                            st.info(f"ℹ️ Η ημέρα {day} ήδη προστέθη στις μη διαθέσιμες του '{name}'.")
                 if not updated:
                     st.warning(f"⚠️ Δεν βρέθηκε υπάλληλος με όνομα '{name}'.")
 
-            # ...existing intents (remove_from_schedule, change_shift κλπ) παραμένουν εδώ όπως έχεις...
-
+    # Avoid duplicate schedule rendering
     if not st.session_state.schedule.empty:
-        st.markdown("### 📋 Ενημερωμένο Πρόγραμμα Βαρδιών")
-        st.dataframe(st.session_state.schedule)
-
-
-    # Display the updated schedule
-    if not st.session_state.schedule.empty:
+        if st.session_state.get("chatbot_rendered", False):
+            return  # already rendered
+        st.session_state.chatbot_rendered = True
         st.markdown("### 📋 Ενημερωμένο Πρόγραμμα Βαρδιών")
         st.dataframe(st.session_state.schedule)
 
