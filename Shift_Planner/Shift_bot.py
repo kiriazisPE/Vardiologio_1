@@ -340,7 +340,7 @@ def page_schedule():
 
 
 # --- Page 4: Chatbot Commands ---
-def page_chatbot():
+ddef page_chatbot():
     """Chatbot commands page."""
     st.header("🍊 Chatbot Εντολές")
 
@@ -363,8 +363,13 @@ def page_chatbot():
             intent = result.get("intent")
             name = result.get("name")
             day = result.get("day")
-            extra_info = result.get("extra_info") or {}
+            extra_info = result.get("extra_info")
 
+            # ✅ Ασφαλής μετατροπή του extra_info σε dict
+            if not isinstance(extra_info, dict):
+                extra_info = {}
+
+            # --- SET DAY UNAVAILABLE ---
             if intent == "set_day_unavailable":
                 updated = False
                 for emp in st.session_state.employees:
@@ -383,6 +388,7 @@ def page_chatbot():
                     {"user": user_input, "ai_response": f"Ημέρα: {day}, Υπάλληλος: {name}, Ενέργεια: {intent}"}
                 )
 
+            # --- CHANGE SHIFT ---
             elif intent == "change_shift":
                 updated = False
                 for i, row in st.session_state.schedule.iterrows():
@@ -399,13 +405,14 @@ def page_chatbot():
                     {"user": user_input, "ai_response": f"Ημέρα: {day}, Υπάλληλος: {name}, Νέα Βάρδια: {extra_info.get('shift')}"}
                 )
 
+            # --- UNKNOWN INTENT ---
             else:
                 st.warning("⚠️ Η εντολή δεν υποστηρίζεται ακόμη.")
                 st.session_state.chat_history.append(
                     {"user": user_input, "ai_response": "Η εντολή δεν υποστηρίζεται ακόμη."}
                 )
 
-    # Εμφάνιση Ιστορικού
+    # --- Εμφάνιση ιστορικού ---
     if st.session_state.get("chat_history"):
         st.markdown("### 💬 Ιστορικό Εντολών")
         for entry in reversed(st.session_state.chat_history):
@@ -413,11 +420,10 @@ def page_chatbot():
             st.markdown(f"**🤖 Απάντηση:** {entry['ai_response']}")
             st.markdown("---")
 
-    # Εμφάνιση προγράμματος πάντα
+    # --- Εμφάνιση προγράμματος ---
     if not st.session_state.schedule.empty:
         st.markdown("### 📋 Ενημερωμένο Πρόγραμμα Βαρδιών")
         st.dataframe(st.session_state.schedule, use_container_width=True)
-
 
 
 # --- Main ---
