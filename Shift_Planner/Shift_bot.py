@@ -367,8 +367,6 @@ def page_chatbot():
             name = result.get("name")
             day = result.get("day")
             extra_info = result.get("extra_info")
-
-            # ✅ Ασφαλής μετατροπή του extra_info σε dict
             if not isinstance(extra_info, dict):
                 extra_info = {}
 
@@ -381,14 +379,18 @@ def page_chatbot():
                         if day and day not in emp["unavailable_days"]:
                             emp["unavailable_days"].append(day)
                             st.success(f"🚫 Ο υπάλληλος '{name}' δεν θα είναι διαθέσιμος τις {day}.")
-                            updated = True
                         elif day:
                             st.info(f"ℹ️ Η ημέρα {day} ήδη προστέθηκε στις μη διαθέσιμες του '{name}'.")
+                        updated = True  # ✅ Σηματοδοτεί ότι ο υπάλληλος βρέθηκε (ακόμα κι αν δεν έγινε αλλαγή)
+                        break
                 if not updated:
                     st.warning(f"⚠️ Δεν βρέθηκε υπάλληλος με όνομα '{name}'.")
 
                 st.session_state.chat_history.append(
-                    {"user": user_input, "ai_response": f"Ημέρα: {day}, Υπάλληλος: {name}, Ενέργεια: {intent}"}
+                    {
+                        "user": user_input,
+                        "ai_response": f"🚫 Ο {name} δεν θα είναι διαθέσιμος τις {day}."
+                    }
                 )
 
             # --- CHANGE SHIFT ---
@@ -405,50 +407,33 @@ def page_chatbot():
                     st.warning(f"⚠️ Δεν βρέθηκε εγγραφή για τον '{name}' την {day}.")
 
                 st.session_state.chat_history.append(
-                    {"user": user_input, "ai_response": f"Ημέρα: {day}, Υπάλληλος: {name}, Νέα Βάρδια: {extra_info.get('shift')}"}
+                    {
+                        "user": user_input,
+                        "ai_response": f"🔁 Η βάρδια του {name} άλλαξε σε {extra_info.get('shift')} την {day}."
+                    }
                 )
 
             # --- UNKNOWN INTENT ---
             else:
                 st.warning("⚠️ Η εντολή δεν υποστηρίζεται ακόμη.")
                 st.session_state.chat_history.append(
-                    {"user": user_input, "ai_response": "Η εντολή δεν υποστηρίζεται ακόμη."}
+                    {"user": user_input, "ai_response": "ℹ️ Η εντολή δεν υποστηρίζεται ακόμη."}
                 )
 
     # --- Εμφάνιση ιστορικού ---
     if st.session_state.get("chat_history"):
         st.markdown("### 💬 Ιστορικό Εντολών")
-
-        for entry in reversed(st.session_state.chat_history):
+        for entry in reversed(st.session_state.chat_history[-10:]):
             user = entry.get("user", "")
             response = entry.get("ai_response", "")
-            
-            # Αυτόματη μορφοποίηση ανά intent
-            if isinstance(response, dict):
-                intent = response.get("intent")
-                name = response.get("name", "")
-                day = response.get("day", "")
-                shift = response.get("shift", "")
-
-                if intent == "set_day_unavailable":
-                    response_text = f"🚫 Ο {name} δεν θα είναι διαθέσιμος τις {day}."
-                elif intent == "change_shift":
-                    response_text = f"🔁 Η βάρδια του {name} άλλαξε σε {shift} την {day}."
-                else:
-                    response_text = "ℹ️ Εντολή καταχωρήθηκε, αλλά δεν υποστηρίζεται ακόμη."
-            else:
-                response_text = response  # Fallback string
-
             st.markdown(f"**👤 Εντολή:** `{user}`")
-            st.markdown(f"**🤖 {response_text}**")
+            st.markdown(f"**🤖 {response}**")
             st.markdown("---")
-            st.markdown(f"**👤 Εντολή:** `{user}`")
 
-        # --- Εμφάνιση προγράμματος ---
-        if not st.session_state.schedule.empty:
-            st.markdown("### 📋 Ενημερωμένο Πρόγραμμα Βαρδιών")
-            st.dataframe(st.session_state.schedule, use_container_width=True)
-
+    # --- Εμφάνιση προγράμματος ---
+    if not st.session_state.schedule.empty:
+        st.markdown("### 📋 Ενημερωμένο Πρόγραμμα Βαρδιών")
+        st.dataframe(st.session_state.schedule, use_container_width=True)
 
 # --- Main ---
 def main():
