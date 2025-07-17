@@ -252,8 +252,7 @@ def validate_employee_data_with_ai(employee_data: dict) -> dict:
 
 
 
-# --- Page 3: Schedule Generation ---
-d# --- Page 3: Schedule Generation (βελτιωμένη εμπειρία χρήστη & καθαρότητα προβλημάτων) ---
+# --- Page 3: Schedule Generation (βελτιωμένη εμπειρία χρήστη & καθαρότητα προβλημάτων) ---
 def page_schedule():
     """Schedule generation page."""
     st.header("🧠 Δημιουργία Προγράμματος")
@@ -308,6 +307,7 @@ def page_schedule():
     if not st.session_state.schedule.empty:
         st.markdown("### 📋 Πρόγραμμα Βαρδιών")
         st.dataframe(st.session_state.schedule, use_container_width=True)
+
 # --- Page 4: Chatbot Commands ---
 def page_chatbot():
     """Chatbot commands page."""
