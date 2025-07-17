@@ -253,7 +253,6 @@ def validate_employee_data_with_ai(employee_data: dict) -> dict:
 
 
 # --- Page 3: Schedule Generation (βελτιωμένη εμπειρία χρήστη & καθαρότητα προβλημάτων) ---
-# --- Page 3: Schedule Generation (βελτιωμένη εμπειρία χρήστη & καθαρότητα προβλημάτων) ---
 def page_schedule():
     """Schedule generation page."""
     st.header("🧠 Δημιουργία Προγράμματος")
@@ -285,7 +284,8 @@ def page_schedule():
                         missing = max_needed - count_available
                         missing_counts[f"{day} ({date})"][shift][role] += missing
 
-                    for e in eligible_employees:
+                    # fill only up to max_needed
+                    for e in eligible_employees[:max_needed]:
                         data.append({
                             "Ημέρα": f"{day} ({date})",
                             "Βάρδια": shift,
@@ -308,10 +308,14 @@ def page_schedule():
         # Αποθήκευση και AI Βελτιστοποίηση
         if data:
             st.session_state.schedule = pd.DataFrame(data)
-            ai_result = process_with_ai("Βελτιστοποίησε το πρόγραμμα.", context=json.dumps(data))
-            optimized = ai_result.get("optimized_schedule", data)
-            st.session_state.schedule = pd.DataFrame(optimized)
-            st.success("✅ Το πρόγραμμα δημιουργήθηκε!")
+            try:
+                ai_result = process_with_ai("Βελτιστοποίησε το πρόγραμμα.", context=json.dumps(data))
+                optimized = ai_result.get("optimized_schedule", data)
+                st.session_state.schedule = pd.DataFrame(optimized)
+                st.success("✅ Το πρόγραμμα δημιουργήθηκε!")
+            except Exception as e:
+                st.session_state.schedule = pd.DataFrame(data)
+                st.warning("⚠️ Το πρόγραμμα δημιουργήθηκε χωρίς AI βελτιστοποίηση.")
         else:
             st.error("❌ Δεν δημιουργήθηκε πρόγραμμα. Ελέγξτε τις ρυθμίσεις και τους υπαλλήλους.")
 
