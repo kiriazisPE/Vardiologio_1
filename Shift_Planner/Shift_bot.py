@@ -265,7 +265,7 @@ def page_schedule():
     if st.button("▶️ Δημιουργία Προγράμματος"):
         data = []
         today = datetime.date.today()
-        warnings = defaultdict(lambda: defaultdict(list))
+        missing_counts = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
 
         for i, day in enumerate(DAYS * 4):  # 4 εβδομάδες
             date = (today + datetime.timedelta(days=i)).strftime("%d/%m/%Y")
@@ -277,8 +277,14 @@ def page_schedule():
                         and shift in e["availability"]
                         and day not in e.get("unavailable_days", [])
                     ]
-                    if not eligible_employees:
-                        warnings[f"{day} ({date})"][shift].append(role)
+
+                    max_needed = st.session_state.rules["max_employees_per_position"].get(role, 1)
+                    count_available = len(eligible_employees)
+
+                    if count_available < max_needed:
+                        missing = max_needed - count_available
+                        missing_counts[f"{day} ({date})"][shift][role] += missing
+
                     for e in eligible_employees:
                         data.append({
                             "Ημέρα": f"{day} ({date})",
@@ -287,14 +293,14 @@ def page_schedule():
                             "Καθήκοντα": role
                         })
 
-        # Εμφάνιση προειδοποιήσεων σε μορφή πίνακα
-        if warnings:
+        # Εμφάνιση ελλείψεων σε πίνακα
+        if missing_counts:
             st.markdown("### ⚠️ Ελλείψεις σε Βάρδιες")
             rows = []
-            for day_label, shifts in warnings.items():
-                for shift, missing_roles in shifts.items():
-                    roles_summary = ', '.join(missing_roles)
-                    rows.append({"Ημέρα": day_label, "Βάρδια": shift, "Ρόλοι χωρίς κάλυψη": roles_summary})
+            for day_label, shifts in missing_counts.items():
+                for shift, roles_dict in shifts.items():
+                    roles_summary = ", ".join([f"{r} ({n})" for r, n in roles_dict.items()])
+                    rows.append({"Ημέρα": day_label, "Βάρδια": shift, "Ρόλοι χωρίς κάλυψη (ποσότητα)": roles_summary})
 
             warning_df = pd.DataFrame(rows)
             st.dataframe(warning_df, use_container_width=True)
@@ -312,6 +318,7 @@ def page_schedule():
     if not st.session_state.schedule.empty:
         st.markdown("### 📋 Πρόγραμμα Βαρδιών")
         st.dataframe(st.session_state.schedule, use_container_width=True)
+
 
 # --- Page 4: Chatbot Commands ---
 def page_chatbot():
