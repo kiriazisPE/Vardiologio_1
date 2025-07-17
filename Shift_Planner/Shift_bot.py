@@ -387,8 +387,8 @@ def page_chatbot():
 
     # Avoid duplicate schedule rendering
     if not st.session_state.schedule.empty:
-    st.markdown("### 📋 Ενημερωμένο Πρόγραμμα Βαρδιών")
-    st.dataframe(st.session_state.schedule, use_container_width=True)
+        st.markdown("### 📋 Ενημερωμένο Πρόγραμμα Βαρδιών")
+        st.dataframe(st.session_state.schedule, use_container_width=True)
 
     if st.session_state.chat_history:
     st.markdown("### 💬 Ιστορικό Εντολών")
