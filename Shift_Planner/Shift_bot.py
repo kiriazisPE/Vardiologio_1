@@ -253,6 +253,7 @@ def validate_employee_data_with_ai(employee_data: dict) -> dict:
 
 
 # --- Page 3: Schedule Generation (βελτιωμένη εμπειρία χρήστη & καθαρότητα προβλημάτων) ---
+# --- Page 3: Schedule Generation (βελτιωμένη εμπειρία χρήστη & καθαρότητα προβλημάτων) ---
 def page_schedule():
     """Schedule generation page."""
     st.header("🧠 Δημιουργία Προγράμματος")
@@ -264,7 +265,7 @@ def page_schedule():
     if st.button("▶️ Δημιουργία Προγράμματος"):
         data = []
         today = datetime.date.today()
-        warnings = defaultdict(list)
+        warnings = defaultdict(lambda: defaultdict(list))
 
         for i, day in enumerate(DAYS * 4):  # 4 εβδομάδες
             date = (today + datetime.timedelta(days=i)).strftime("%d/%m/%Y")
@@ -277,7 +278,7 @@ def page_schedule():
                         and day not in e.get("unavailable_days", [])
                     ]
                     if not eligible_employees:
-                        warnings[day].append(role)
+                        warnings[f"{day} ({date})"][shift].append(role)
                     for e in eligible_employees:
                         data.append({
                             "Ημέρα": f"{day} ({date})",
@@ -286,13 +287,17 @@ def page_schedule():
                             "Καθήκοντα": role
                         })
 
-        # Εμφάνιση προειδοποιήσεων
+        # Εμφάνιση προειδοποιήσεων σε μορφή πίνακα
         if warnings:
-            st.markdown("### ⚠️ Προβλήματα κατά την Ανάθεση Βαρδιών")
-            for day, roles in warnings.items():
-                role_groups = [roles[i:i+4] for i in range(0, len(roles), 4)]
-                for group in role_groups:
-                    st.error(f"📅 {day}: Δεν υπάρχουν διαθέσιμοι υπάλληλοι για τους ρόλους: {', '.join(group)}")
+            st.markdown("### ⚠️ Ελλείψεις σε Βάρδιες")
+            rows = []
+            for day_label, shifts in warnings.items():
+                for shift, missing_roles in shifts.items():
+                    roles_summary = ', '.join(missing_roles)
+                    rows.append({"Ημέρα": day_label, "Βάρδια": shift, "Ρόλοι χωρίς κάλυψη": roles_summary})
+
+            warning_df = pd.DataFrame(rows)
+            st.dataframe(warning_df, use_container_width=True)
 
         # Αποθήκευση και AI Βελτιστοποίηση
         if data:
