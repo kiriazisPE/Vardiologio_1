@@ -363,7 +363,7 @@ def page_chatbot():
             intent = result.get("intent")
             name = result.get("name")
             day = result.get("day")
-            extra_info = result.get("extra_info")
+            extra_info = result.get("extra_info", {})
 
             if intent == "set_day_unavailable":
                 updated = False
@@ -375,27 +375,48 @@ def page_chatbot():
                             st.success(f"🚫 Ο υπάλληλος '{name}' δεν θα είναι διαθέσιμος τις {day}.")
                             updated = True
                         elif day:
-                            st.info(f"ℹ️ Η ημέρα {day} ήδη προστέθη στις μη διαθέσιμες του '{name}'.")
+                            st.info(f"ℹ️ Η ημέρα {day} ήδη προστέθηκε στις μη διαθέσιμες του '{name}'.")
                 if not updated:
                     st.warning(f"⚠️ Δεν βρέθηκε υπάλληλος με όνομα '{name}'.")
 
-                # Καταγραφή στο ιστορικό
                 st.session_state.chat_history.append(
                     {"user": user_input, "ai_response": f"Ημέρα: {day}, Υπάλληλος: {name}, Ενέργεια: {intent}"}
                 )
 
+            elif intent == "change_shift":
+                updated = False
+                for i, row in st.session_state.schedule.iterrows():
+                    if row["Υπάλληλος"] == name and day in row["Ημέρα"]:
+                        new_shift = extra_info.get("shift", "Πρωί")
+                        st.session_state.schedule.at[i, "Βάρδια"] = new_shift
+                        st.success(f"🔁 Η βάρδια του '{name}' άλλαξε σε {new_shift} για την {day}.")
+                        updated = True
+                        break
+                if not updated:
+                    st.warning(f"⚠️ Δεν βρέθηκε εγγραφή για τον '{name}' την {day}.")
 
-    # Avoid duplicate schedule rendering
+                st.session_state.chat_history.append(
+                    {"user": user_input, "ai_response": f"Ημέρα: {day}, Υπάλληλος: {name}, Νέα Βάρδια: {extra_info.get('shift')}"}
+                )
+
+            else:
+                st.warning("⚠️ Η εντολή δεν υποστηρίζεται ακόμη.")
+                st.session_state.chat_history.append(
+                    {"user": user_input, "ai_response": "Η εντολή δεν υποστηρίζεται ακόμη."}
+                )
+
+    # Εμφάνιση Ιστορικού
+    if st.session_state.get("chat_history"):
+        st.markdown("### 💬 Ιστορικό Εντολών")
+        for entry in reversed(st.session_state.chat_history):
+            st.markdown(f"**👤 Εντολή:** {entry['user']}")
+            st.markdown(f"**🤖 Απάντηση:** {entry['ai_response']}")
+            st.markdown("---")
+
+    # Εμφάνιση προγράμματος πάντα
     if not st.session_state.schedule.empty:
         st.markdown("### 📋 Ενημερωμένο Πρόγραμμα Βαρδιών")
         st.dataframe(st.session_state.schedule, use_container_width=True)
-
-    if st.session_state.chat_history:
-        st.markdown("### 💬 Ιστορικό Εντολών")
-        for entry in st.session_state.chat_history[::-1]:
-            st.markdown(f"**👤 Εντολή:** {entry['user']}")
-            st.markdown(f"**🤖 AI:** {entry['ai_response']}")
-            st.markdown("---")
 
 
 
