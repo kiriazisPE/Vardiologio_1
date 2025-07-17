@@ -253,30 +253,30 @@ def validate_employee_data_with_ai(employee_data: dict) -> dict:
 
 
 # --- Page 3: Schedule Generation ---
+d# --- Page 3: Schedule Generation (βελτιωμένη εμπειρία χρήστη & καθαρότητα προβλημάτων) ---
 def page_schedule():
     """Schedule generation page."""
     st.header("🧠 Δημιουργία Προγράμματος")
 
     if not st.session_state.employees:
-        st.warning("Προσθέστε πρώτα υπαλλήλους.")
+        st.warning("🚫 Πρέπει πρώτα να προσθέσετε υπαλλήλους.")
         return
 
     if st.button("▶️ Δημιουργία Προγράμματος"):
         data = []
         today = datetime.date.today()
-        warnings = defaultdict(list)  # Collect warnings by day and role
+        warnings = defaultdict(list)
 
-        for i, day in enumerate(DAYS * 4):  # Generate for 4 weeks (1 month)
+        for i, day in enumerate(DAYS * 4):  # 4 εβδομάδες
             date = (today + datetime.timedelta(days=i)).strftime("%d/%m/%Y")
             for shift in st.session_state.active_shifts:
                 for role in st.session_state.roles:
-                    eligible_employees = []
-                    for e in st.session_state.employees:
-                        if role in e["roles"] and shift in e["availability"]:
-                            unavailable_days = e.get("unavailable_days", [])
-                            if day not in unavailable_days:
-                                eligible_employees.append(e)
-
+                    eligible_employees = [
+                        e for e in st.session_state.employees
+                        if role in e["roles"]
+                        and shift in e["availability"]
+                        and day not in e.get("unavailable_days", [])
+                    ]
                     if not eligible_employees:
                         warnings[day].append(role)
                     for e in eligible_employees:
@@ -287,24 +287,27 @@ def page_schedule():
                             "Καθήκοντα": role
                         })
 
-        # Display grouped warnings
+        # Εμφάνιση προειδοποιήσεων
         if warnings:
-            st.warning("⚠️ Υπάρχουν προβλήματα με τις βάρδιες:")
+            st.markdown("### ⚠️ Προβλήματα κατά την Ανάθεση Βαρδιών")
             for day, roles in warnings.items():
-                st.markdown(f"- **{day}**: Δεν υπάρχουν διαθέσιμοι υπάλληλοι για τους ρόλους: {', '.join(roles)}")
+                role_groups = [roles[i:i+4] for i in range(0, len(roles), 4)]
+                for group in role_groups:
+                    st.error(f"📅 {day}: Δεν υπάρχουν διαθέσιμοι υπάλληλοι για τους ρόλους: {', '.join(group)}")
 
+        # Αποθήκευση και AI Βελτιστοποίηση
         if data:
             st.session_state.schedule = pd.DataFrame(data)
             ai_result = process_with_ai("Βελτιστοποίησε το πρόγραμμα.", context=json.dumps(data))
-            st.session_state.schedule = pd.DataFrame(ai_result.get("optimized_schedule", data))
+            optimized = ai_result.get("optimized_schedule", data)
+            st.session_state.schedule = pd.DataFrame(optimized)
             st.success("✅ Το πρόγραμμα δημιουργήθηκε!")
         else:
             st.error("❌ Δεν δημιουργήθηκε πρόγραμμα. Ελέγξτε τις ρυθμίσεις και τους υπαλλήλους.")
 
     if not st.session_state.schedule.empty:
         st.markdown("### 📋 Πρόγραμμα Βαρδιών")
-        st.dataframe(st.session_state.schedule)
-
+        st.dataframe(st.session_state.schedule, use_container_width=True)
 # --- Page 4: Chatbot Commands ---
 def page_chatbot():
     """Chatbot commands page."""
