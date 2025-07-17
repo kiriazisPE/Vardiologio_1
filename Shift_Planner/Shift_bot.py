@@ -417,11 +417,32 @@ def page_chatbot():
 
     # --- Εμφάνιση ιστορικού ---
     if st.session_state.get("chat_history"):
-        st.markdown("### 💬 Ιστορικό Εντολών")
-        for entry in reversed(st.session_state.chat_history):
-            st.markdown(f"**👤 Εντολή:** {entry['user']}")
-            st.markdown(f"**🤖 Απάντηση:** {entry['ai_response']}")
-            st.markdown("---")
+    st.markdown("### 💬 Ιστορικό Εντολών")
+
+    for entry in reversed(st.session_state.chat_history):
+        user = entry.get("user", "")
+        response = entry.get("ai_response", "")
+        
+        # Αυτόματη μορφοποίηση ανά intent
+        if isinstance(response, dict):
+            intent = response.get("intent")
+            name = response.get("name", "")
+            day = response.get("day", "")
+            shift = response.get("shift", "")
+
+            if intent == "set_day_unavailable":
+                response_text = f"🚫 Ο {name} δεν θα είναι διαθέσιμος τις {day}."
+            elif intent == "change_shift":
+                response_text = f"🔁 Η βάρδια του {name} άλλαξε σε {shift} την {day}."
+            else:
+                response_text = "ℹ️ Εντολή καταχωρήθηκε, αλλά δεν υποστηρίζεται ακόμη."
+        else:
+            response_text = response  # Fallback string
+
+        st.markdown(f"**👤 Εντολή:** `{user}`")
+        st.markdown(f"**🤖 {response_text}**")
+        st.markdown("---")
+        st.markdown(f"**👤 Εντολή:** `{user}`")
 
     # --- Εμφάνιση προγράμματος ---
     if not st.session_state.schedule.empty:
