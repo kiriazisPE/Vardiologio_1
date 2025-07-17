@@ -363,7 +363,7 @@ def page_chatbot():
             intent = result.get("intent")
             name = result.get("name")
             day = result.get("day")
-            extra_info = result.get("extra_info", {})
+            extra_info = result.get("extra_info") or {}
 
             if intent == "set_day_unavailable":
                 updated = False
