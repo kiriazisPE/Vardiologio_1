@@ -379,13 +379,25 @@ def page_chatbot():
                 if not updated:
                     st.warning(f"⚠️ Δεν βρέθηκε υπάλληλος με όνομα '{name}'.")
 
+                # Καταγραφή στο ιστορικό
+                st.session_state.chat_history.append(
+                    {"user": user_input, "ai_response": f"Ημέρα: {day}, Υπάλληλος: {name}, Ενέργεια: {intent}"}
+                )
+
+
     # Avoid duplicate schedule rendering
     if not st.session_state.schedule.empty:
-        if st.session_state.get("chatbot_rendered", False):
-            return  # already rendered
-        st.session_state.chatbot_rendered = True
-        st.markdown("### 📋 Ενημερωμένο Πρόγραμμα Βαρδιών")
-        st.dataframe(st.session_state.schedule)
+    st.markdown("### 📋 Ενημερωμένο Πρόγραμμα Βαρδιών")
+    st.dataframe(st.session_state.schedule, use_container_width=True)
+
+    if st.session_state.chat_history:
+    st.markdown("### 💬 Ιστορικό Εντολών")
+    for entry in st.session_state.chat_history[::-1]:
+        st.markdown(f"**👤 Εντολή:** {entry['user']}")
+        st.markdown(f"**🤖 AI:** {entry['ai_response']}")
+        st.markdown("---")
+
+
 
 # --- Main ---
 def main():
