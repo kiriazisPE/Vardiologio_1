@@ -126,7 +126,6 @@ def page_employees():
     """Employee management page."""
     st.header("👥 Προσθήκη ή Επεξεργασία Υπαλλήλων")
 
-    # Form for adding new employees
     with st.form("employee_form"):
         name = st.text_input("Όνομα", help="Προσθέστε το όνομα του υπαλλήλου.")
         roles = st.multiselect("Ρόλοι", st.session_state.roles, help="Επιλέξτε τους ρόλους που μπορεί να αναλάβει ο υπάλληλος.")
@@ -135,23 +134,22 @@ def page_employees():
         submitted = st.form_submit_button("💾 Αποθήκευση")
 
         if submitted:
-            if not availability:
-                st.warning("⚠️ Παρακαλώ επιλέξτε τουλάχιστον μία βάρδια για τη διαθεσιμότητα του υπαλλήλου.")
-            elif not name.strip():
-                st.warning("⚠️ Το όνομα του υπαλλήλου δεν μπορεί να είναι κενό.")
+            employee_data = {
+                "name": name.strip(),
+                "roles": roles,
+                "days_off": days_off,
+                "availability": availability
+            }
+
+            # 🧠 AI validation
+            validation = validate_employee_data_with_ai(employee_data)
+            if not validation.get("valid", False):
+                st.error("❌ Σφάλμα στα δεδομένα:")
+                for err in validation.get("errors", []):
+                    st.markdown(f"- {err}")
             else:
-                employee_data = {
-                    "name": name.strip(),
-                    "roles": roles,
-                    "days_off": days_off,
-                    "availability": availability
-                }
-                ai_result = process_with_ai("Επαλήθευσε τα δεδομένα υπαλλήλου.", context=json.dumps(employee_data))
-                if "error" in ai_result:
-                    st.error("❌ Σφάλμα κατά την επαλήθευση των δεδομένων.")
-                else:
-                    st.session_state.employees.append(employee_data)
-                    st.success(f"✅ Ο υπάλληλος '{name}' προστέθηκε.")
+                st.session_state.employees.append(employee_data)
+                st.success(f"✅ Ο υπάλληλος '{name}' προστέθηκε.")
 
     st.markdown("### Εγγεγραμμένοι Υπάλληλοι")
     with st.expander("📋 Δείτε τους εγγεγραμμένους υπαλλήλους"):
@@ -162,7 +160,6 @@ def page_employees():
                     st.markdown(f"**{emp['name']}** - Ρόλοι: {', '.join(emp['roles'])}, Ρεπό: {emp['days_off']}, Διαθεσιμότητα: {', '.join(emp['availability']) if emp['availability'] else 'Δεν μπορεί'}")
                 with col2:
                     if st.button("✏️ Επεξεργασία", key=f"edit_{index}"):
-                        # Edit employee logic
                         with st.form(f"edit_form_{index}"):
                             new_name = st.text_input("Όνομα", value=emp["name"])
                             new_roles = st.multiselect("Ρόλοι", st.session_state.roles, default=emp["roles"])
@@ -170,22 +167,61 @@ def page_employees():
                             new_availability = st.multiselect("Διαθεσιμότητα", st.session_state.active_shifts, default=emp["availability"])
                             save_changes = st.form_submit_button("💾 Αποθήκευση Αλλαγών")
                             if save_changes:
-                                if not new_availability:
-                                    st.warning("⚠️ Παρακαλώ επιλέξτε τουλάχιστον μία βάρδια για τη διαθεσιμότητα του υπαλλήλου.")
-                                elif not new_name.strip():
-                                    st.warning("⚠️ Το όνομα του υπαλλήλου δεν μπορεί να είναι κενό.")
+                                new_data = {
+                                    "name": new_name.strip(),
+                                    "roles": new_roles,
+                                    "days_off": new_days_off,
+                                    "availability": new_availability
+                                }
+                                validation = validate_employee_data_with_ai(new_data)
+                                if not validation.get("valid", False):
+                                    st.error("❌ Σφάλμα στα νέα δεδομένα:")
+                                    for err in validation.get("errors", []):
+                                        st.markdown(f"- {err}")
                                 else:
-                                    emp["name"] = new_name.strip()
-                                    emp["roles"] = new_roles
-                                    emp["days_off"] = new_days_off
-                                    emp["availability"] = new_availability
+                                    emp.update(new_data)
                                     st.success(f"✅ Ο υπάλληλος '{new_name}' ενημερώθηκε.")
                 with col3:
                     if st.button("🗑️ Διαγραφή", key=f"delete_{index}"):
                         st.session_state.employees.pop(index)
                         st.success(f"✅ Ο υπάλληλος '{emp['name']}' διαγράφηκε.")
         else:
-            st.info("Δεν υπάρχουν εγγεγραμμένοι υπάλληλοι. Προσθέστε έναν υπάλληλο για να ξεκινήσετε.")
+            st.info("Δεν υπάρχουν εγγεγραμμένοι υπάλληλοι.")
+
+
+def validate_employee_data_with_ai(employee_data: dict) -> dict:
+    """
+    Validate employee data using AI. Return dictionary with result or error list.
+    """
+    try:
+        prompt = f"""
+        Είσαι σύστημα ελέγχου προσωπικού. Σου δίνω δεδομένα υπαλλήλου σε JSON μορφή και πρέπει να ελέγξεις αν είναι σωστά.
+        Έλεγξε αν:
+        - το όνομα είναι μη κενό string
+        - υπάρχουν τουλάχιστον 1 ρόλος
+        - υπάρχει διαθεσιμότητα για τουλάχιστον μία βάρδια
+
+        Αν όλα είναι σωστά, απάντησε:
+        {{"valid": true}}
+
+        Αν υπάρχουν σφάλματα, απάντησε:
+        {{"valid": false, "errors": ["περιγραφή_1", "περιγραφή_2", ...]}}
+
+        Δεδομένα: {json.dumps(employee_data, ensure_ascii=False)}
+        """
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return json.loads(response.choices[0].message.content)
+    except Exception as e:
+        return {"valid": False, "errors": [str(e)]}
+
+
+
+
+
+
 
 # --- Page 3: Schedule Generation ---
 def page_schedule():
