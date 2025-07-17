@@ -277,7 +277,7 @@ def page_schedule():
         st.dataframe(st.session_state.schedule)
 
 # --- Page 4: Chatbot Commands ---
-ddef page_chatbot():
+def page_chatbot():
     """Chatbot commands page."""
     st.header("🍊 Chatbot Εντολές")
 
