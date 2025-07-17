@@ -82,7 +82,10 @@ def process_with_ai(user_input: str, context: str = "") -> dict:
             ]
         )
         response_content = response.choices[0].message.content.strip()
-        
+        st.code(response_content, language="json")
+        # Log the AI response for debugging
+        st.session_state.chat_history.append({"user": user_input, "ai_response": response_content})
+
         # Validate and parse the response
         try:
             result = json.loads(response_content)
