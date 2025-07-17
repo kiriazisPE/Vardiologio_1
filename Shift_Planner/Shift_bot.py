@@ -267,7 +267,9 @@ def page_schedule():
         missing_counts = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
 
         for i, day in enumerate(DAYS * 4):  # 4 εβδομάδες
-            date = (today + datetime.timedelta(days=i)).strftime("%d/%m/%Y")
+            date_obj = today + datetime.timedelta(days=i)
+            date_str = date_obj.strftime("%d/%m/%Y")
+            day_label = f"{day} ({date_str})"
             for shift in st.session_state.active_shifts:
                 for role in st.session_state.roles:
                     eligible_employees = [
@@ -282,12 +284,11 @@ def page_schedule():
 
                     if count_available < max_needed:
                         missing = max_needed - count_available
-                        missing_counts[f"{day} ({date})"][shift][role] += missing
+                        missing_counts[day_label][shift][role] += missing
 
-                    # fill only up to max_needed
                     for e in eligible_employees[:max_needed]:
                         data.append({
-                            "Ημέρα": f"{day} ({date})",
+                            "Ημέρα": day_label,
                             "Βάρδια": shift,
                             "Υπάλληλος": e["name"],
                             "Καθήκοντα": role
@@ -310,11 +311,16 @@ def page_schedule():
             st.session_state.schedule = pd.DataFrame(data)
             try:
                 ai_result = process_with_ai("Βελτιστοποίησε το πρόγραμμα.", context=json.dumps(data))
-                optimized = ai_result.get("optimized_schedule", data)
-                st.session_state.schedule = pd.DataFrame(optimized)
-                st.success("✅ Το πρόγραμμα δημιουργήθηκε!")
+                if isinstance(ai_result, dict):
+                    optimized = ai_result.get("optimized_schedule")
+                    if optimized:
+                        st.session_state.schedule = pd.DataFrame(optimized)
+                        st.success("✅ Το πρόγραμμα δημιουργήθηκε!")
+                    else:
+                        st.success("✅ Το πρόγραμμα δημιουργήθηκε χωρίς αλλαγές AI.")
+                else:
+                    st.warning("⚠️ Η απάντηση AI δεν είχε σωστή μορφή.")
             except Exception as e:
-                st.session_state.schedule = pd.DataFrame(data)
                 st.warning("⚠️ Το πρόγραμμα δημιουργήθηκε χωρίς AI βελτιστοποίηση.")
         else:
             st.error("❌ Δεν δημιουργήθηκε πρόγραμμα. Ελέγξτε τις ρυθμίσεις και τους υπαλλήλους.")
