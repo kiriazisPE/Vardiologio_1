@@ -82,9 +82,10 @@ def process_with_ai(user_input: str, context: str = "") -> dict:
             ]
         )
         response_content = response.choices[0].message.content.strip()
-        st.code(response_content, language="json")
-        # Log the AI response for debugging
-        st.session_state.chat_history.append({"user": user_input, "ai_response": response_content})
+        st.markdown(f"**✅ Η εντολή εκτελέστηκε:** {user_input}")
+        st.markdown(f"**🤖 AI Ανάλυση:** {response_content}")
+
+    
 
         # Validate and parse the response
         try:
@@ -328,8 +329,6 @@ def page_schedule():
                     if optimized:
                         st.session_state.schedule = pd.DataFrame(optimized)
                         st.success("✅ Το πρόγραμμα δημιουργήθηκε!")
-                    else:
-                        st.success("✅ Το πρόγραμμα δημιουργήθηκε χωρίς αλλαγές AI.")
                 else:
                     st.warning("⚠️ Η απάντηση AI δεν είχε σωστή μορφή.")
             except Exception as e:
@@ -360,6 +359,11 @@ def page_chatbot():
     if st.button("💡 Εκτέλεση Εντολής") and user_input.strip():
         result = process_with_ai(user_input, context=json.dumps(st.session_state.schedule.to_dict()))
 
+        if not isinstance(extra_info, dict):
+            try:
+                extra_info = json.loads(extra_info) if extra_info else {}
+            except:
+                extra_info = {}
         if "error" in result:
             st.error("❌ Δεν μπόρεσα να καταλάβω την εντολή.")
         else:
