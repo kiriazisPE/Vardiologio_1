@@ -49,7 +49,7 @@ def init_session():
     st.session_state.setdefault("chat_history", [])
 
 # --- AI Processing ---
-ddef page_chatbot():
+def page_chatbot():
     """Chatbot commands page."""
     st.header("🍊 Chatbot Εντολές")
 
