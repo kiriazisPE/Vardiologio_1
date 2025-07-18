@@ -49,54 +49,83 @@ def init_session():
     st.session_state.setdefault("chat_history", [])
 
 # --- AI Processing ---
-def process_with_ai(user_input: str, context: str = "") -> dict:
-    """
-    Use OpenAI API to analyze the user's command and extract intent, name, day, and extra info.
-    """
-    try:
-        system_prompt = f"""
-        Είσαι βοηθός για ένα σύστημα διαχείρισης βαρδιών. Αναλύεις εντολές στα ελληνικά.
-        Πρέπει να εξάγεις τις εξής πληροφορίες:
-        1. intent: Τύπος εντολής (remove_from_schedule, add_day_off, availability_change, change_shift, ask_schedule_for_employee, list_day_schedule, change_company_settings, employee_interaction_rule, set_day_unavailable)
-        2. name: Το όνομα του υπαλλήλου (αν υπάρχει)
-        3. day: Η ημέρα/ημερομηνία (αν υπάρχει)
-        4. extra_info: Επιπλέον πληροφορίες (π.χ. βάρδια, κανόνες αλληλεπίδρασης, αλλαγές στις ρυθμίσεις)
+ddef page_chatbot():
+    """Chatbot commands page."""
+    st.header("🍊 Chatbot Εντολές")
 
-        Context: {context}
-        Απάντησε σε JSON μορφή.
+    if "schedule" not in st.session_state or st.session_state.schedule.empty:
+        st.warning("📋 Δεν έχει δημιουργηθεί πρόγραμμα. Πήγαινε στη σελίδα ' Πρόγραμμα ' για να δημιουργήσεις.")
+        return
 
-        Αν δεν μπορείς να καταλάβεις ή να εντοπίσεις κάποια πληροφορία, απάντησε με:
-        {{
-            "intent": null,
-            "name": null,
-            "day": null,
-            "extra_info": null
-        }}
-        """
+    user_input = st.text_input(
+        label="Εισάγετε την εντολή σας",
+        placeholder="Π.χ. Ο Κώστας δε μπορεί να δουλέψει Δευτέρες",
+        help="Προσθέστε μια εντολή για να επεξεργαστεί το πρόγραμμα."
+    )
 
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Ανάλυσε την εξής εντολή: {user_input}"}
-            ]
-        )
-        response_content = response.choices[0].message.content.strip()
-        st.markdown(f"**✅ Η εντολή εκτελέστηκε:** {user_input}")
-        st.markdown(f"**🤖 AI Ανάλυση:** {response_content}")
+    if st.button("💡 Εκτέλεση Εντολής") and user_input.strip():
+        result = process_with_ai(user_input, context=json.dumps(st.session_state.schedule.to_dict()))
 
-    
+        if "error" in result or result.get("intent") is None:
+            st.error("❌ Δεν μπόρεσα να καταλάβω την εντολή.")
+        else:
+            intent = result.get("intent")
+            name = result.get("name")
+            day = result.get("day")
+            extra_info = result.get("extra_info")
+            if not isinstance(extra_info, dict):
+                try:
+                    extra_info = json.loads(extra_info) if extra_info else {}
+                except:
+                    extra_info = {}
 
-        # Validate and parse the response
-        try:
-            result = json.loads(response_content)
-            return result
-        except json.JSONDecodeError:
-            st.warning("⚠️ Η εντολή δεν αναγνωρίστηκε πλήρως. Δοκιμάστε να διατυπώσετε την εντολή διαφορετικά ή να είστε πιο συγκεκριμένοι.")
-            return {"error": "Invalid JSON response"}
-    except Exception as e:
-        st.error("❌ Υπήρξε πρόβλημα κατά την επεξεργασία της εντολής. Παρακαλώ δοκιμάστε ξανά.")
-        return {"error": str(e)}
+            executed = False
+
+            # --- SET DAY UNAVAILABLE ---
+            if intent == "set_day_unavailable":
+                updated = False
+                for emp in st.session_state.employees:
+                    if emp["name"] == name:
+                        emp.setdefault("unavailable_days", [])
+                        if day and day not in emp["unavailable_days"]:
+                            emp["unavailable_days"].append(day)
+                            st.success(f"🚫 Ο υπάλληλος '{name}' δεν θα είναι διαθέσιμος τις {day}.")
+                        elif day:
+                            st.info(f"ℹ️ Η ημέρα {day} ήδη προστέθηκε στις μη διαθέσιμες του '{name}'.")
+                        updated = True
+                        break
+                if not updated:
+                    st.warning(f"⚠️ Δεν βρέθηκε υπάλληλος με όνομα '{name}'.")
+                else:
+                    executed = True
+
+            # --- CHANGE SHIFT ---
+            elif intent == "change_shift":
+                updated = False
+                for i, row in st.session_state.schedule.iterrows():
+                    if row["Υπάλληλος"] == name and day in row["Ημέρα"]:
+                        new_shift = extra_info.get("shift", "Πρωί")
+                        st.session_state.schedule.at[i, "Βάρδια"] = new_shift
+                        st.success(f"🔁 Η βάρδια του '{name}' άλλαξε σε {new_shift} για την {day}.")
+                        updated = True
+                        break
+                if not updated:
+                    st.warning(f"⚠️ Δεν βρέθηκε εγγραφή για τον '{name}' την {day}.")
+                else:
+                    executed = True
+
+            # --- UNKNOWN INTENT ---
+            else:
+                st.warning("⚠️ Η εντολή δεν υποστηρίζεται ακόμη.")
+
+            # Μόνο αν εκτελέστηκε επιτυχώς
+            if executed:
+                st.markdown(f"✅ Η εντολή εκτελέστηκε: {user_input}")
+
+    # --- Εμφάνιση προγράμματος ---
+    if not st.session_state.schedule.empty:
+        st.markdown("### 📋 Ενημερωμένο Πρόγραμμα Βαρδιών")
+        st.dataframe(st.session_state.schedule, use_container_width=True)
 
 # --- Navigation ---
 def navigation():
