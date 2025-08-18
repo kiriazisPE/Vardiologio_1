@@ -1,6 +1,7 @@
-streamlit>=1.37.0
+streamlit==1.38.0
 streamlit-authenticator==0.4.1
 pandas==2.2.2
 Pillow==10.4.0
 PyYAML==6.0.2
-pulp==2.7.0
+pulp==2.7.0           # optional; MILP optimizer will auto-fallback if missing
+python-dotenv==1.0.1
