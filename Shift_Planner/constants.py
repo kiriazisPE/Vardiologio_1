@@ -37,16 +37,18 @@ EXTRA_ROLES = ["Υποδοχή", "Καθαριστής", "Λαντζέρης", "
 DEFAULT_RULES = {
     "max_daily_hours_5days": 8,
     "max_daily_hours_6days": 9,
+    "max_daily_hours_7days": 9,          # NEW
     "max_daily_overtime": 3,
     "min_daily_rest": 11,
     "weekly_hours_5days": 40,
     "weekly_hours_6days": 48,
+    "weekly_hours_7days": 56,            # NEW (7 * 8h)
     "weekly_max_with_overtime": 50,
     "weekly_rest_hours": 24,
     "monthly_hours": 160,
     "monthly_overtime": 12,
     "max_consecutive_days": 6,
-    "work_model": "5ήμερο"
+    "work_model": "5ήμερο",
 }
 
 # ---------- Utility Functions ----------
