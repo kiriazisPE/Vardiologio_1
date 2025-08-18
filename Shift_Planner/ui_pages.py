@@ -346,8 +346,13 @@ def page_business():
         with col1:
             company["name"] = st.text_input("Όνομα", company.get("name", ""))
         with col2:
-            company["work_model"] = st.selectbox("Μοντέλο", ["5ήμερο", "6ήμερο"],
-                                                 index=0 if company.get("work_model", "5ήμερο") == "5ήμερο" else 1)
+            options = ["5ήμερο", "6ήμερο", "7ήμερο"]
+            current = company.get("work_model", "5ήμερο")
+            try:
+                idx = options.index(current)
+            except ValueError:
+                idx = 0
+            company["work_model"] = st.selectbox("Μοντέλο", options, index=idx)
         with col3:
             company["active"] = st.toggle("Ενεργή", value=company.get("active", True))
         st.caption("Οι ρυθμίσεις αυτές επηρεάζουν τους ελέγχους συμμόρφωσης και τις προεπιλογές δημιουργίας.")
