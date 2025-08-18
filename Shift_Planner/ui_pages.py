@@ -49,12 +49,14 @@ def page_employees():
                 st.error(e)
         else:
             try:
-                add_employee(company["id"], name.strip(), [role] if role else [], availability_dict)
+                # DB expects lists (JSON stored)
+                add_employee(company["id"], name.strip(), roles, availability)
                 st.session_state.employees = get_employees(company["id"])
                 st.success(f"✅ Προστέθηκε ο/η {name.strip()}")
                 st.rerun()
             except Exception as ex:
                 st.error(f"Αποτυχία προσθήκης: {ex}")
+
 
     employees = st.session_state.employees
     if not employees:
@@ -292,7 +294,7 @@ def _demo_seed():
     ]
     today = dt.date.today()
     rows = []
-    for i in range(5):
+    for i in range(7):
         d = today + dt.timedelta(days=i)
         rows.append({"Ημέρα": DAYS[d.weekday()], "Ημερομηνία": str(d), "Βάρδια": "Πρωί", "Υπάλληλος": "Maria Papadopoulou", "Ρόλος": "Barista", "Ώρες": 8})
         rows.append({"Ημέρα": DAYS[d.weekday()], "Ημερομηνία": str(d), "Βάρδια": "Απόγευμα", "Υπάλληλος": "Nikos Georgiou", "Ρόλος": "Cashier", "Ώρες": 7})
@@ -353,6 +355,7 @@ def page_business():
             except ValueError:
                 idx = 0
             company["work_model"] = st.selectbox("Μοντέλο", options, index=idx)
+
         with col3:
             company["active"] = st.toggle("Ενεργή", value=company.get("active", True))
         st.caption("Οι ρυθμίσεις αυτές επηρεάζουν τους ελέγχους συμμόρφωσης και τις προεπιλογές δημιουργίας.")
@@ -374,26 +377,29 @@ def page_business():
                 company["roles"].append(new_role)
 
         company.setdefault("role_settings", {})
-        for r in company["roles"]:
-            rs = company["role_settings"].setdefault(r, {})  # tolerate partial dicts from DB
-            rs.setdefault("priority", 5)
-            rs.setdefault("min_per_shift", 1)
-            rs.setdefault("max_per_shift", 5)
-            rs.setdefault("max_hours_week", 40)
-            rs.setdefault("cost", 0)
+
+        for r in company.get("roles", []):
+            # Ensure dict exists and populate missing keys safely
+            rs = company["role_settings"].setdefault(r, {})
+            rs["priority"]        = int(rs.get("priority", 5))
+            rs["min_per_shift"]   = int(rs.get("min_per_shift", 1))
+            rs["max_per_shift"]   = int(rs.get("max_per_shift", 5))
+            rs["max_hours_week"]  = int(rs.get("max_hours_week", 40))
+            rs["cost"]            = float(rs.get("cost", 0))
             rs.setdefault("preferred_shifts", [])
 
             st.markdown(f"**{r}**")
             col = st.columns(3)
-            rs["priority"]      = col[0].slider("Προτερ.", 1, 10, int(rs.get("priority", 5)), key=f"prio_{r}")
-            rs["min_per_shift"] = col[1].number_input("Min/shift", 0, 10, int(rs.get("min_per_shift", 1)), key=f"min_{r}")
-            rs["max_per_shift"] = col[2].number_input("Max/shift", 1, 10, int(rs.get("max_per_shift", 5)), key=f"max_{r}")
+            rs["priority"]       = col[0].slider("Προτερ.", 1, 10, int(rs.get("priority", 5)), key=f"prio_{r}")
+            rs["min_per_shift"]  = col[1].number_input("Min/shift", 0, 10, int(rs.get("min_per_shift", 1)), key=f"min_{r}")
+            rs["max_per_shift"]  = col[2].number_input("Max/shift", 1, 10, int(rs.get("max_per_shift", 5)), key=f"max_{r}")
             rs["preferred_shifts"] = st.multiselect(
                 "Προτιμώμενες",
-                company["active_shifts"],
+                company.get("active_shifts", []),
                 default=rs.get("preferred_shifts", []),
                 key=f"pref_{r}"
             )
+
 
 
     with st.expander("⚖️ Κανόνες", expanded=False):

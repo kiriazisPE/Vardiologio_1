@@ -101,15 +101,17 @@ def _employee_can_take_slot(
     df["Ημερομηνία"] = pd.to_datetime(df["Ημερομηνία"]).dt.date
     df["Ώρες"] = df["Ώρες"].astype(int)
 
-    if work_model.strip() == "5ήμερο":
+    wm = (work_model or "").strip()
+    if wm == "5ήμερο":
         max_daily = int(rules.get("max_daily_hours_5days", 8))
         max_week  = int(rules.get("weekly_hours_5days", 40))
-    elif work_model.strip() == "7ήμερο":
+    elif wm == "7ήμερο":
         max_daily = int(rules.get("max_daily_hours_7days", 9))
-        max_week  = int(rules.get("weekly_hours_7days", 56))  # set what you prefer
-    else:  # "6ήμερο"
+        max_week  = int(rules.get("weekly_hours_7days", 56))
+    else:  # "6ήμερο" (default)
         max_daily = int(rules.get("max_daily_hours_6days", 9))
         max_week  = int(rules.get("weekly_hours_6days", 48))
+
 
 
     new_hours = _shift_len(shift)
