@@ -104,10 +104,13 @@ def _employee_can_take_slot(
     if work_model.strip() == "5ήμερο":
         max_daily = int(rules.get("max_daily_hours_5days", 8))
         max_week  = int(rules.get("weekly_hours_5days", 40))
-    else:
+    elif work_model.strip() == "7ήμερο":
+        max_daily = int(rules.get("max_daily_hours_7days", 9))
+        max_week  = int(rules.get("weekly_hours_7days", 56))  # set what you prefer
+    else:  # "6ήμερο"
         max_daily = int(rules.get("max_daily_hours_6days", 9))
         max_week  = int(rules.get("weekly_hours_6days", 48))
-    min_rest = int(rules.get("min_daily_rest", 11))
+
 
     new_hours = _shift_len(shift)
 
