@@ -49,7 +49,7 @@ def page_employees():
                 st.error(e)
         else:
             try:
-                add_employee(company["id"], name.strip(), roles, availability)
+                add_employee(company["id"], name.strip(), [role] if role else [], availability_dict)
                 st.session_state.employees = get_employees(company["id"])
                 st.success(f"✅ Προστέθηκε ο/η {name.strip()}")
                 st.rerun()
@@ -107,14 +107,17 @@ def page_employees():
             with c2:
                 st.write(" ")
                 st.write(" ")
+
                 if st.button("💾 Αποθήκευση", key=f"save_{emp['id']}"):
                     try:
-                        if any(r not in company["roles"] for r in new_roles):
+                        # Validate against current company config
+                        if any(r not in role_options for r in new_roles):
                             st.error("Μη έγκυρος ρόλος.")
-                        elif any(s not in company["active_shifts"] for s in new_av):
+                        elif any(s not in shift_options for s in new_av):
                             st.error("Μη έγκυρη βάρδια διαθεσιμότητας.")
                         else:
-                            update_employee(emp["id"], new_name, new_roles, new_av)
+                            # DB expects roles: list, availability: list (JSON stored):contentReference[oaicite:1]{index=1}
+                            update_employee(emp["id"], new_name.strip(), new_roles, new_av)
                             st.session_state.employees = get_employees(company["id"])
                             st.success("✅ Αποθηκεύτηκε")
                             st.rerun()
@@ -138,6 +141,7 @@ def page_employees():
                             st.rerun()
                         except Exception as ex:
                             st.error(f"Αποτυχία διαγραφής: {ex}")
+
 
 def _sanitize_default(options: list[str], default_vals: list[str]):
     opts = set(options or [])
@@ -366,17 +370,26 @@ def page_business():
 
         company.setdefault("role_settings", {})
         for r in company["roles"]:
-            rs = company["role_settings"].setdefault(
-                r, {"priority": 5, "min_per_shift": 1, "max_per_shift": 5,
-                    "max_hours_week": 40, "cost": 0, "preferred_shifts": []}
-            )
+            rs = company["role_settings"].setdefault(r, {})  # tolerate partial dicts from DB
+            rs.setdefault("priority", 5)
+            rs.setdefault("min_per_shift", 1)
+            rs.setdefault("max_per_shift", 5)
+            rs.setdefault("max_hours_week", 40)
+            rs.setdefault("cost", 0)
+            rs.setdefault("preferred_shifts", [])
+
             st.markdown(f"**{r}**")
             col = st.columns(3)
-            rs["priority"]       = col[0].slider("Προτερ.", 1, 10, rs["priority"], key=f"prio_{r}")
-            rs["min_per_shift"]  = col[1].number_input("Min/shift", 0, 10, rs["min_per_shift"], key=f"min_{r}")
-            rs["max_per_shift"]  = col[2].number_input("Max/shift", 1, 10, rs["max_per_shift"], key=f"max_{r}")
-            rs["preferred_shifts"] = st.multiselect("Προτιμώμενες", company["active_shifts"],
-                                                    default=rs["preferred_shifts"], key=f"pref_{r}")
+            rs["priority"]      = col[0].slider("Προτερ.", 1, 10, int(rs.get("priority", 5)), key=f"prio_{r}")
+            rs["min_per_shift"] = col[1].number_input("Min/shift", 0, 10, int(rs.get("min_per_shift", 1)), key=f"min_{r}")
+            rs["max_per_shift"] = col[2].number_input("Max/shift", 1, 10, int(rs.get("max_per_shift", 5)), key=f"max_{r}")
+            rs["preferred_shifts"] = st.multiselect(
+                "Προτιμώμενες",
+                company["active_shifts"],
+                default=rs.get("preferred_shifts", []),
+                key=f"pref_{r}"
+            )
+
 
     with st.expander("⚖️ Κανόνες", expanded=False):
         rules = company.get("rules", {})
