@@ -13,7 +13,7 @@ Public API:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, Iterable
+from typing import Dict, List, Tuple
 from collections import defaultdict, Counter
 import datetime as dt
 import pandas as pd
@@ -64,353 +64,6 @@ class Assignment:
     hours: int
 
 
-# ---------- Smart, self-healing generator ----------
-
-from typing import Iterable
-
-def _week_of(d: dt.date) -> int:
-    return d.isocalendar().week
-
-def _emp_obj_index(employees: List[dict]) -> Dict[str, Employee]:
-    """Index employees by name as Employee objects."""
-    idx = {}
-    for i, e in enumerate(employees):
-        roles = e.get("roles") or []
-        avail = e.get("availability") or []
-        idx[e["name"]] = Employee(i, e["name"], roles, avail)
-    return idx
-
-def _employee_can_take_slot(
-    sched: pd.DataFrame,
-    emp: Employee,
-    d: dt.date,
-    shift: str,
-    role: str,
-    rules: Dict,
-    work_model: str,
-) -> bool:
-    """
-    True if emp can take (d, shift, role) **without** breaking availability,
-    roles, daily/weekly hour caps, rest (prev & next day), and duplicates.
-    """
-    # availability + role
-    if shift not in (emp.availability or []): return False
-    if role  not in (emp.roles or []):        return False
-
-    df = sched.copy()
-    df["Ημερομηνία"] = pd.to_datetime(df["Ημερομηνία"]).dt.date
-    df["Ώρες"] = df["Ώρες"].astype(int)
-
-    wm = (work_model or "").strip()
-    if wm == "5ήμερο":
-        max_daily = int(rules.get("max_daily_hours_5days", 8))
-        max_week  = int(rules.get("weekly_hours_5days", 40))
-    elif wm == "7ήμερο":
-        max_daily = int(rules.get("max_daily_hours_7days", 9))
-        max_week  = int(rules.get("weekly_hours_7days", 56))
-    else:  # "6ήμερο" (default)
-        max_daily = int(rules.get("max_daily_hours_6days", 9))
-        max_week  = int(rules.get("weekly_hours_6days", 48))
-
-
-
-    new_hours = _shift_len(shift)
-
-    # daily cap
-    day_hours = int(df[(df["Ημερομηνία"] == d) & (df["Υπάλληλος"] == emp.name)]["Ώρες"].sum())
-    if day_hours + new_hours > max_daily:
-        return False
-
-    # weekly cap
-    wk = _week_of(d)
-    wk_hours = 0
-    for dd in df[df["Υπάλληλος"] == emp.name]["Ημερομηνία"].unique():
-        dd = dd if isinstance(dd, dt.date) else pd.to_datetime(dd).date()
-        if _week_of(dd) == wk:
-            wk_hours += int(df[(df["Ημερομηνία"] == dd) & (df["Υπάλληλος"] == emp.name)]["Ώρες"].sum())
-    if wk_hours + new_hours > max_week:
-        return False
-
-    # min rest: previous day -> today
-    prev = d - dt.timedelta(days=1)
-    prev_rows = df[(df["Ημερομηνία"] == prev) & (df["Υπάλληλος"] == emp.name)]
-    if not prev_rows.empty:
-        start_next = SHIFT_TIMES.get(shift, (9, 17))[0]
-        for _, r in prev_rows.iterrows():
-            s, e = SHIFT_TIMES.get(r["Βάρδια"], (9, 17))
-            end_prev = e if e >= s else e + 24
-            prev_end_abs = end_prev if end_prev < 24 else end_prev - 24
-            rest = (24 - prev_end_abs) + start_next
-            if rest < min_rest:
-                return False
-
-    # min rest: today (this new) -> next day
-    nextd = d + dt.timedelta(days=1)
-    next_rows = df[(df["Ημερομηνία"] == nextd) & (df["Υπάλληλος"] == emp.name)]
-    if not next_rows.empty:
-        s, e = SHIFT_TIMES.get(shift, (9, 17))
-        end_new = e if e >= s else e + 24
-        for _, r in next_rows.iterrows():
-            start_next = SHIFT_TIMES.get(r["Βάρδια"], (9, 17))[0]
-            new_end_abs = end_new if end_new < 24 else end_new - 24
-            rest = (24 - new_end_abs) + start_next
-            if rest < min_rest:
-                return False
-
-    # no duplicate row for same (d, shift, emp)
-    clash = ((df["Ημερομηνία"] == d) & (df["Βάρδια"] == shift) & (df["Υπάλληλος"] == emp.name)).any()
-    if clash:
-        return False
-
-    return True
-
-def _fill_coverage_gaps(
-    sched: pd.DataFrame,
-    employees: List[dict],
-    active_shifts: List[str],
-    roles: List[str],
-    role_settings: Dict,
-    rules: Dict,
-    work_model: str,
-) -> pd.DataFrame:
-    """
-    Ensure min_per_shift coverage per (date, shift, role) by assigning eligible
-    employees with least (day_load, week_load).
-    """
-    df = sched.copy()
-    df["Ημερομηνία"] = pd.to_datetime(df["Ημερομηνία"]).dt.date
-    df["Ώρες"] = df["Ώρες"].astype(int)
-
-    emp_idx = _emp_obj_index(employees)
-    min_per = {r: max(0, int(role_settings.get(r, {}).get("min_per_shift", 1))) for r in roles}
-
-    all_dates = sorted(df["Ημερομηνία"].unique())
-    for d in all_dates:
-        for s in active_shifts:
-            for r in roles:
-                have = int(((df["Ημερομηνία"] == d) & (df["Βάρδια"] == s) & (df["Ρόλος"] == r)).sum())
-                need = max(0, min_per.get(r, 0) - have)
-                while need > 0:
-                    cands: List[Employee] = []
-                    for name, emp in emp_idx.items():
-                        if not _employee_can_take_slot(df, emp, d, s, r, rules, work_model):
-                            continue
-                        cands.append(emp)
-                    if not cands:
-                        break
-
-                    def load_key(e: Employee) -> tuple[int, int]:
-                        day_h = int(df[(df["Ημερομηνία"] == d) & (df["Υπάλληλος"] == e.name)]["Ώρες"].sum())
-                        wk = _week_of(d)
-                        wk_h = 0
-                        for dd in df[df["Υπάλληλος"] == e.name]["Ημερομηνία"].unique():
-                            dd = dd if isinstance(dd, dt.date) else pd.to_datetime(dd).date()
-                            if _week_of(dd) == wk:
-                                wk_h += int(df[(df["Ημερομηνία"] == dd) & (df["Υπάλληλος"] == e.name)]["Ώρες"].sum())
-                        return (day_h, wk_h)
-
-                    best = sorted(cands, key=load_key)[0]
-                    df.loc[len(df)] = [DAYS[d.weekday()], d, s, best.name, r, _shift_len(s)]
-                    need -= 1
-    return df
-
-def _try_reassign_one(
-    sched: pd.DataFrame,
-    employees: List[dict],
-    viol_row: dict,
-    rules: Dict,
-    work_model: str,
-    active_shifts: List[str],
-    roles: List[str],
-) -> tuple[pd.DataFrame, bool]:
-    """
-    Local fix for a single violation by reassigning ONE implicated row.
-    Returns (new_df, changed?).
-    """
-    df = sched.copy()
-    df["Ημερομηνία"] = pd.to_datetime(df["Ημερομηνία"]).dt.date
-    df["Ώρες"] = df["Ώρες"].astype(int)
-    emp_idx = _emp_obj_index(employees)
-
-    rule = viol_row.get("Rule")
-    emp  = viol_row.get("Υπάλληλος", "")
-    date = viol_row.get("Ημερομηνία", None)
-    if isinstance(date, str):
-        date = pd.to_datetime(date).date()
-
-    def candidates_for_slot(d: dt.date, shift: str, role: str, exclude: Iterable[str]) -> List[Employee]:
-        cands = []
-        for e in emp_idx.values():
-            if e.name in exclude: continue
-            if _employee_can_take_slot(df, e, d, shift, role, rules, work_model):
-                cands.append(e)
-        return cands
-
-    def pick_heaviest(emp_name: str, on_date: dt.date | None = None) -> int | None:
-        subset = df[df["Υπάλληλος"] == emp_name]
-        if on_date: subset = subset[subset["Ημερομηνία"] == on_date]
-        if subset.empty: return None
-        return subset.sort_values("Ώρες", ascending=False).index[0]
-
-    changed = False
-
-    if rule == "max_daily_hours" and date is not None and emp:
-        row_idx = pick_heaviest(emp, on_date=date)
-        if row_idx is not None:
-            row = df.loc[row_idx]
-            d, s, r = row["Ημερομηνία"], row["Βάρδια"], row["Ρόλος"]
-            cands = candidates_for_slot(d, s, r, exclude=[emp])
-            if cands:
-                df.loc[row_idx, "Υπάλληλος"] = cands[0].name
-                changed = True
-            else:
-                df = df.drop(index=row_idx).reset_index(drop=True)
-                changed = True
-
-    elif rule == "weekly_hours_cap" and emp:
-        row_idx = pick_heaviest(emp)
-        if row_idx is not None:
-            row = df.loc[row_idx]
-            d, s, r = row["Ημερομηνία"], row["Βάρδια"], row["Ρόλος"]
-            cands = candidates_for_slot(d, s, r, exclude=[emp])
-            if cands:
-                df.loc[row_idx, "Υπάλληλος"] = cands[0].name
-                changed = True
-            else:
-                df = df.drop(index=row_idx).reset_index(drop=True)
-                changed = True
-
-    elif rule == "min_daily_rest" and emp and date is not None:
-        # Violation reported on next day; move earliest shift on that next day
-        next_rows = df[(df["Ημερομηνία"] == date) & (df["Υπάλληλος"] == emp)]
-        if not next_rows.empty:
-            next_rows = next_rows.sort_values(by="Βάρδια", key=lambda s: [SHIFT_TIMES.get(x, (9,17))[0] for x in s])
-            row_idx = next_rows.index[0]
-            row = df.loc[row_idx]
-            d, s, r = row["Ημερομηνία"], row["Βάρδια"], row["Ρόλος"]
-            cands = candidates_for_slot(d, s, r, exclude=[emp])
-            if cands:
-                df.loc[row_idx, "Υπάλληλος"] = cands[0].name
-                changed = True
-            else:
-                df = df.drop(index=row_idx).reset_index(drop=True)
-                changed = True
-
-    elif rule == "max_consecutive_days" and emp and date is not None:
-        rows = df[(df["Ημερομηνία"] == date) & (df["Υπάλληλος"] == emp)]
-        if not rows.empty:
-            row_idx = rows.index[0]
-            row = df.loc[row_idx]
-            d, s, r = row["Ημερομηνία"], row["Βάρδια"], row["Ρόλος"]
-            cands = candidates_for_slot(d, s, r, exclude=[emp])
-            if cands:
-                df.loc[row_idx, "Υπάλληλος"] = cands[0].name
-                changed = True
-            else:
-                df = df.drop(index=row_idx).reset_index(drop=True)
-                changed = True
-
-    return df, changed
-
-def repair_schedule(
-    df: pd.DataFrame,
-    employees: List[dict],
-    active_shifts: List[str],
-    roles: List[str],
-    rules: Dict,
-    role_settings: Dict,
-    work_model: str = "5ήμερο",
-    max_passes: int = 8,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Iteratively fix all violations (reassign or drop illegal rows), then backfill
-    to meet min_per. Returns (fixed_schedule_df, remaining_violations_df).
-    """
-    sched = df.copy()
-    sched["Ημερομηνία"] = pd.to_datetime(sched["Ημερομηνία"]).dt.date
-    sched["Ώρες"] = sched["Ώρες"].astype(int)
-
-    for _ in range(max_passes):
-        viols = check_violations(sched, rules, work_model)
-        if viols.empty:
-            break
-        changed_any = False
-        order = {"high": 0, "medium": 1, "": 2}
-        viols = viols.sort_values(by=["Severity", "Rule"], key=lambda s: [order.get(x, 2) for x in s])
-        for _, v in viols.iterrows():
-            sched, changed = _try_reassign_one(
-                sched, employees, v.to_dict(), rules, work_model, active_shifts, roles
-            )
-            changed_any = changed_any or changed
-        # always backfill coverage after each pass
-        sched = _fill_coverage_gaps(sched, employees, active_shifts, roles, role_settings, rules, work_model)
-        if not changed_any:
-            break
-
-    final_viol = check_violations(sched, rules, work_model)
-    return sched.reset_index(drop=True), final_viol.reset_index(drop=True)
-
-def generate_schedule_smart(
-    start_date,
-    employees: List[dict],
-    active_shifts: List[str],
-    roles: List[str],
-    rules: Dict,
-    role_settings: Dict,
-    days_count: int,
-    work_model: str = "5ήμερο",
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """
-    1) Build initial plan (MILP if available, else greedy v2)
-    2) Repair iteratively until no violations or fixed-point
-    3) Return (schedule_df, missing_df, violations_df)
-    """
-    # initial plan (prefer MILP)
-    try:
-        sched_df, missing_df = generate_schedule_opt(
-            start_date, employees, active_shifts, roles, rules, role_settings, days_count, work_model
-        )
-    except Exception:
-        sched_df, missing_df = generate_schedule_v2(
-            start_date, employees, active_shifts, roles, rules, role_settings, days_count, work_model
-        )
-
-    fixed_df, viols_df = repair_schedule(
-        sched_df, employees, active_shifts, roles, rules, role_settings, work_model
-    )
-
-    # recompute remaining missing coverage after repair
-    min_per = {r: max(0, int(role_settings.get(r, {}).get("min_per_shift", 1))) for r in roles}
-    fixed = fixed_df.copy()
-    if not fixed.empty:
-        fixed["Ημερομηνία"] = pd.to_datetime(fixed["Ημερομηνία"]).dt.date
-
-    missing_rows = []
-    if not fixed.empty:
-        all_dates = sorted(fixed["Ημερομηνία"].unique())
-        for d in all_dates:
-            for s in active_shifts:
-                for r in roles:
-                    cur = int(((fixed["Ημερομηνία"] == d) & (fixed["Βάρδια"] == s) & (fixed["Ρόλος"] == r)).sum())
-                    need = max(0, min_per.get(r, 0) - cur)
-                    if need > 0:
-                        missing_rows.append({
-                            "Ημέρα": DAYS[d.weekday()],
-                            "Ημερομηνία": str(d),
-                            "Βάρδια": s,
-                            "Ρόλος": r,
-                            "Λείπουν": need
-                        })
-    missing_df = pd.DataFrame(missing_rows, columns=["Ημέρα","Ημερομηνία","Βάρδια","Ρόλος","Λείπουν"])
-
-    # normalize types for UI
-    fixed_df = fixed_df.copy()
-    if not fixed_df.empty:
-        fixed_df["Ημερομηνία"] = fixed_df["Ημερομηνία"].astype(str)
-
-    return fixed_df.reset_index(drop=True), missing_df.reset_index(drop=True), viols_df.reset_index(drop=True)
-
-
 # ----------------------------
 # Rule checks
 # ----------------------------
@@ -448,7 +101,7 @@ def check_violations(
     sched["Ημερομηνία"] = pd.to_datetime(sched["Ημερομηνία"]).dt.date
     sched["Ώρες"] = sched["Ώρες"].astype(int)
 
-    # Rule parameters
+    # Rule parameters (5/6-day models; extend easily for 7-day if needed)
     if work_model.strip() == "5ήμερο":
         max_daily_hours = int(rules.get("max_daily_hours_5days", 8))
         weekly_hours_cap = int(rules.get("weekly_hours_5days", 40))
@@ -458,14 +111,14 @@ def check_violations(
     min_daily_rest = int(rules.get("min_daily_rest", 11))
     max_consecutive_days = int(rules.get("max_consecutive_days", 6))
 
-    viols: List[Dict] = []
+    viols = []
 
     # A) Max daily hours
     daily = sched.groupby(["Υπάλληλος", "Ημερομηνία"])["Ώρες"].sum().reset_index()
     for _, row in daily.iterrows():
         if row["Ώρες"] > max_daily_hours:
             viols.append({
-                "Ημερομηνία": row["Ημερομηνία"],
+                "Ημερομηνία": row["Ημερονημία"] if "Ημερονημία" in row else row["Ημερομηνία"],
                 "Υπάλληλος": row["Υπάλληλος"],
                 "Βάρδια": "",
                 "Ρόλος": "",
@@ -497,7 +150,7 @@ def check_violations(
     for emp, g in sched.groupby("Υπάλληλος"):
         g = g.sort_values(["Ημερομηνία", "Βάρδια"])
         # Build map date -> list of shifts
-        by_date: Dict[dt.date, List[str]] = defaultdict(list)
+        by_date = defaultdict(list)
         for _, r in g.iterrows():
             by_date[r["Ημερομηνία"]].append(r["Βάρδια"])
         dates = sorted(by_date.keys())
@@ -530,7 +183,7 @@ def check_violations(
     for emp, g in sched.groupby("Υπάλληλος"):
         days = sorted(set(g["Ημερομηνία"]))
         streak = 0
-        last: dt.date | None = None
+        last = None
         for d in days:
             if last is None or d == last + dt.timedelta(days=1):
                 streak += 1
@@ -555,7 +208,7 @@ def check_violations(
 
 
 # ----------------------------
-# Greedy generator
+# Greedy generator (v2)
 # ----------------------------
 
 def generate_schedule_v2(
@@ -597,7 +250,7 @@ def generate_schedule_v2(
     role_prio = {r: int(role_settings.get(r, {}).get("priority", 5)) for r in roles}
     role_pref = {r: list(role_settings.get(r, {}).get("preferred_shifts", [])) for r in roles}
 
-    assigned: List[Assignment] = []
+    assigned = []
     hours_by_emp_week: Dict[str, Counter] = defaultdict(Counter)
     last_shift_by_emp: Dict[str, tuple[dt.date, str]] = {}
 
@@ -644,7 +297,7 @@ def generate_schedule_v2(
             sc += 1.0
         return sc
 
-    missing_rows: List[Dict] = []
+    missing_rows = []
     for i in range(days_count):
         d = start + dt.timedelta(days=i)
         day_label = _weekday_name(d)
@@ -653,7 +306,7 @@ def generate_schedule_v2(
                 need = min_per.get(role, 0)
                 if need <= 0:
                     continue
-                picks: List[str] = []
+                picks = []
                 for _ in range(need):
                     candidates = [e for e in emps if can_assign(e, d, shift, role)]
                     if not candidates:
@@ -726,7 +379,7 @@ def auto_fix_schedule(
     grouped = sched.groupby(["Ημερομηνία", "Βάρδια", "Ρόλος"]).size().reset_index(name="count")
     existing = {(r["Ημερομηνία"], r["Βάρδια"], r["Ρόλος"]): r["count"] for _, r in grouped.iterrows()}
 
-    rows_to_add: List[Dict] = []
+    rows_to_add = []
     all_dates = sorted(sched["Ημερομηνία"].unique())
     for d in all_dates:
         for shift in active_shifts:
@@ -735,7 +388,7 @@ def auto_fix_schedule(
                 need = max(0, min_per.get(role, 0) - cur)
                 for _ in range(need):
                     # Eligible candidates
-                    candidates: List[Employee] = []
+                    candidates = []
                     for e in emps:
                         if shift not in e.availability or role not in e.roles:
                             continue
@@ -779,7 +432,7 @@ def auto_fix_schedule(
 
 
 # ----------------------------
-# MILP Optimizer (PuLP)
+# MILP Optimizer (PuLP) — optional
 # ----------------------------
 
 def generate_schedule_opt(
@@ -813,15 +466,15 @@ def generate_schedule_opt(
     start = pd.to_datetime(start_date).date()
     dates = [start + dt.timedelta(days=i) for i in range(days_count)]
 
-    # Normalize employees
-    Emps: List[Employee] = []
+    # Normalize employees (accept legacy availability dict format)
+    Emps = []
     for i, e in enumerate(employees):
         av = e.get("availability") or []
-        if isinstance(av, dict):  # support legacy dict format
+        if isinstance(av, dict):
             av = [k for k, v in av.items() if v]
         Emps.append(Employee(id=i, name=e["name"], roles=e.get("roles", []) or [], availability=av))
 
-    # Parameters / helpers
+    # Helpers
     def shift_len(s: str) -> int:
         return _shift_len(s)
 
@@ -861,7 +514,7 @@ def generate_schedule_opt(
     m = pulp.LpProblem("ShiftScheduling", pulp.LpMinimize)
 
     # Variables
-    x: Dict[tuple, pulp.LpVariable] = {}
+    x = {}
     for e in Emps:
         for d in dates:
             for s in active_shifts:
@@ -941,7 +594,8 @@ def generate_schedule_opt(
             m += H[(e.name, w)] - T[w] == Devp[(e.name, w)] - Devn[(e.name, w)]
 
     # --- Objective ---
-    obj = W["pen_under"] * pulp.lpSum(u.values()) + W["pen_over"] * pulp.lpSum(o.values())
+    obj = 0
+    obj += 100.0 * pulp.lpSum(u.values()) + 5.0 * pulp.lpSum(o.values())
 
     pref_terms = []
     prio_terms = []
@@ -954,19 +608,19 @@ def generate_schedule_opt(
                     prio_terms.append((10 - role_prio.get(r, 5)) * x[(e.name, d, s, r)])
 
     if pref_terms:
-        obj += -W["w_pref"] * pulp.lpSum(pref_terms)
+        obj += -2.0 * pulp.lpSum(pref_terms)
     if prio_terms:
-        obj += -W["w_prio"] * pulp.lpSum(prio_terms)
+        obj += -1.0 * pulp.lpSum(prio_terms)
 
-    obj += W["w_fair"] * (pulp.lpSum(Devp.values()) + pulp.lpSum(Devn.values()))
+    obj += 0.5 * (pulp.lpSum(Devp.values()) + pulp.lpSum(Devn.values()))
     m.setObjective(obj)
 
     # Solve
     m.solve(pulp.PULP_CBC_CMD(msg=False))
 
     # Build schedule + missing
-    rows: List[Dict] = []
-    missing_rows: List[Dict] = []
+    rows = []
+    missing_rows = []
     for d in dates:
         for s in active_shifts:
             for r in roles:
