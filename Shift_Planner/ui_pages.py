@@ -468,146 +468,67 @@ def page_schedule():
     days_count = 7 if mode == "🗓️ Εβδομαδιαίο" else 30
     start_date = st.date_input("Έναρξη", dt.date.today(), key="start_sched")
 
-    # Generate
-    if st.button("🛠 Δημιουργία", type="primary", key="btn_generate"):
-    # gen returns (df, missing_df)
-    df, conflicts = gen(
-        start_date,
-        st.session_state.employees,
-        company.get("active_shifts", []),
-        company.get("roles", []),
-        company.get("rules", {}),
-        company.get("role_settings", {}),
-        days_count,
-        company.get("work_model", "5ήμερο"),
-    )
+    # --- inside page_schedule(), near your buttons section ---
 
-    # Optional: one-pass autofix, then compute violations
-    try:
-        from scheduler import auto_fix_schedule
-        fixed_df, viols = auto_fix_schedule(
-            df,
+    # 🛠 Generate schedule
+    if st.button("🛠 Δημιουργία", type="primary", key="btn_generate"):
+        # gen returns (df, missing_df)
+        df, conflicts = gen(
+            start_date,
             st.session_state.employees,
             company.get("active_shifts", []),
             company.get("roles", []),
             company.get("rules", {}),
             company.get("role_settings", {}),
+            days_count,
             company.get("work_model", "5ήμερο"),
         )
-    except Exception:
-        fixed_df = df
-        viols = check_violations(df, company.get("rules", {}), company.get("work_model", "5ήμερο"))
 
-    st.session_state.schedule = fixed_df
-    st.session_state.missing_staff = conflicts
-    st.session_state.violations = viols
-    st.success("✅ Δημιουργήθηκε πρόγραμμα.")
-
-
-    st.divider()
-
-    # Editor + filters
-    if not st.session_state.schedule.empty:
-        sched = st.session_state.schedule.copy()
-
-        employees = sorted({e.get("name", "") for e in st.session_state.employees})
-        roles = company.get("roles", [])
-        shifts = company.get("active_shifts", [])
-
-        c1, c2, c3, c4, c5 = st.columns([1.1, 1.1, 1.1, 1, 1.2])
-        role_f    = c1.multiselect("Φίλτρο Ρόλου", roles, key="f_role")
-        shift_f   = c2.multiselect("Φίλτρο Βάρδιας", shifts, key="f_shift")
-        emp_f     = c3.multiselect("Φίλτρο Υπαλλήλου", employees, key="f_emp")
-        date_from = c4.date_input("Από", pd.to_datetime(sched["Ημερομηνία"]).min().date(), key="f_from")
-        date_to   = c5.date_input("Έως", pd.to_datetime(sched["Ημερομηνία"]).max().date(), key="f_to")
-
-        mask = (
-            (pd.to_datetime(sched["Ημερομηνία"]) >= pd.to_datetime(date_from)) &
-            (pd.to_datetime(sched["Ημερομηνία"]) <= pd.to_datetime(date_to))
-        )
-        if role_f:  mask &= sched["Ρόλος"].isin(role_f)
-        if shift_f: mask &= sched["Βάρδια"].isin(shift_f)
-        if emp_f:   mask &= sched["Υπάλληλος"].isin(emp_f)
-
-        view = sched[mask].reset_index(drop=True)
-        view["Ημερομηνία"] = pd.to_datetime(view["Ημερομηνία"], errors="coerce").dt.date
-
-        # Quick row status
-        def row_status(row):
-            if not str(row.get("Υπάλληλος", "")).strip():
-                return "Κενό"
-            try:
-                hrs = int(row.get("Ώρες", 0))
-            except Exception:
-                hrs = 0
-            return "OK" if 1 <= hrs <= 12 else "Λάθος ώρες"
-
-        view["Κατάσταση"] = view.apply(row_status, axis=1)
-
-        col_cfg = {
-            "Ημέρα": st.column_config.TextColumn("Ημέρα", disabled=True),
-            "Ημερομηνία": st.column_config.DateColumn("Ημερομηνία", format="YYYY-MM-DD"),
-            "Βάρδια": st.column_config.SelectboxColumn("Βάρδια", options=shifts, width="large"),
-            "Υπάλληλος": st.column_config.SelectboxColumn("Υπάλληλος", options=employees),
-            "Ρόλος": st.column_config.SelectboxColumn("Ρόλος", options=roles),
-            "Ώρες": st.column_config.NumberColumn("Ώρες", min_value=1, max_value=12, step=1),
-            "Κατάσταση": st.column_config.TextColumn("Κατάσταση", help="Γρήγορος έλεγχος", width="medium"),
-        }
-
-        left, right = st.columns([0.67, 0.33])
-
-        with left:
-            edited = st.data_editor(
-                view,
-                num_rows="dynamic",
-                use_container_width=True,
-                column_config=col_cfg,
-                hide_index=True,
-                key="editor_schedule",
+        # Optional "self-heal": try auto_fix_schedule, else just compute violations
+        try:
+            from scheduler import auto_fix_schedule
+            fixed_df, viols = auto_fix_schedule(
+                df,
+                st.session_state.employees,
+                company.get("active_shifts", []),
+                company.get("roles", []),
+                company.get("rules", {}),
+                company.get("role_settings", {}),
+                company.get("work_model", "5ήμερο"),
             )
+        except Exception:
+            from scheduler import check_violations  # ensure imported if you use this path
+            fixed_df = df
+            viols = check_violations(df, company.get("rules", {}), company.get("work_model", "5ήμερο"))
 
-            # Save edited subset back into full schedule
-            st.session_state.setdefault("_last_schedule", None)
-            b1, b2, b3 = st.columns(3)
-            if b1.button("💾 Αποθήκευση Αλλαγών", key="save_sched"):
-                st.session_state["_last_schedule"] = st.session_state.schedule.copy()
-                untouched = sched[~mask]
-                st.session_state.schedule = (
-                    pd.concat([untouched, edited.drop(columns=["Κατάσταση"])], ignore_index=True)
-                      .sort_values(["Ημερομηνία", "Βάρδια", "Ρόλος", "Υπάλληλος"])
-                      .reset_index(drop=True)
-                )
-                st.success("✅ Οι αλλαγές αποθηκεύτηκαν!")
+        st.session_state.schedule = fixed_df
+        st.session_state.missing_staff = conflicts
+        st.session_state.violations = viols
+        st.success("✅ Δημιουργήθηκε πρόγραμμα.")
 
-            if b2.button("↩️ Αναίρεση τελευταίας αποθήκευσης", disabled=st.session_state["_last_schedule"] is None):
-                st.session_state.schedule = _ensure_schedule_df(st.session_state["_last_schedule"].copy())
-                st.session_state["_last_schedule"] = None
-                st.toast("Επαναφορά πραγματοποιήθηκε.", icon="↩️")
-                st.rerun()
+    # 🧹 Recheck & auto-fix current schedule
+    if st.button("🧹 Επανέλεγχος & Αυτο-διόρθωση", help="Εφάρμοσε όλους τους κανόνες στο τρέχον πρόγραμμα"):
+        try:
+            from scheduler import auto_fix_schedule
+            fixed_df, viols = auto_fix_schedule(
+                st.session_state.schedule,
+                st.session_state.employees,
+                company.get("active_shifts", []),
+                company.get("roles", []),
+                company.get("rules", {}),
+                company.get("role_settings", {}),
+                company.get("work_model", "5ήμερο"),
+            )
+        except Exception:
+            from scheduler import check_violations
+            fixed_df = st.session_state.schedule
+            viols = check_violations(fixed_df, company.get("rules", {}), company.get("work_model", "5ήμερο"))
 
-            csv = st.session_state.schedule.to_csv(index=False).encode("utf-8-sig")
-            b3.download_button("⬇️ Εξαγωγή CSV", data=csv, file_name="schedule.csv", mime="text/csv", key="dl_sched")
+        st.session_state.schedule = fixed_df
+        st.session_state.violations = viols
+        st.success("🔧 Έγινε επανέλεγχος & διόρθωση.")
+        st.rerun()
 
-        if st.button("🧹 Επανέλεγχος & Αυτο-διόρθωση", help="Εφάρμοσε όλους τους κανόνες στο τρέχον πρόγραμμα"):
-            try:
-                from scheduler import auto_fix_schedule
-                fixed_df, viols = auto_fix_schedule(
-                    st.session_state.schedule,
-                    st.session_state.employees,
-                    company.get("active_shifts", []),
-                    company.get("roles", []),
-                    company.get("rules", {}),
-                    company.get("role_settings", {}),
-                    company.get("work_model", "5ήμερο"),
-                )
-            except Exception:
-                fixed_df = st.session_state.schedule
-                viols = check_violations(fixed_df, company.get("rules", {}), company.get("work_model", "5ήμερο"))
-
-            st.session_state.schedule = fixed_df
-            st.session_state.violations = viols
-            st.success("🔧 Έγινε επανέλεγχος & διόρθωση.")
-            st.rerun()
 
 
     # Missing coverage
