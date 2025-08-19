@@ -119,7 +119,7 @@ def check_violations(
     for _, row in daily.iterrows():
         if row["Ώρες"] > max_daily_hours:
             viols.append({
-                "Ημερομηνία": row["Ημερονημία"] if "Ημερονημία" in row else row["Ημερομηνία"],
+                "Ημερομηνία": row["Ημερομηνία"] if "Ημερομηνία" in row else row["Ημερομηνία"],
                 "Υπάλληλος": row["Υπάλληλος"],
                 "Βάρδια": "",
                 "Ρόλος": "",

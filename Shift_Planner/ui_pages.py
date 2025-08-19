@@ -470,20 +470,39 @@ def page_schedule():
 
     # Generate
     if st.button("🛠 Δημιουργία", type="primary", key="btn_generate"):
-        df, conflicts, viols = gen(
-            start_date,
+    # gen returns (df, missing_df)
+    df, conflicts = gen(
+        start_date,
+        st.session_state.employees,
+        company.get("active_shifts", []),
+        company.get("roles", []),
+        company.get("rules", {}),
+        company.get("role_settings", {}),
+        days_count,
+        company.get("work_model", "5ήμερο"),
+    )
+
+    # Optional: one-pass autofix, then compute violations
+    try:
+        from scheduler import auto_fix_schedule
+        fixed_df, viols = auto_fix_schedule(
+            df,
             st.session_state.employees,
             company.get("active_shifts", []),
             company.get("roles", []),
             company.get("rules", {}),
             company.get("role_settings", {}),
-            days_count,
             company.get("work_model", "5ήμερο"),
         )
-        st.session_state.schedule = _ensure_schedule_df(df)
-        st.session_state.missing_staff = conflicts
-        st.session_state.violations = viols
-        st.success("✅ Δημιουργήθηκε πρόγραμμα.")
+    except Exception:
+        fixed_df = df
+        viols = check_violations(df, company.get("rules", {}), company.get("work_model", "5ήμερο"))
+
+    st.session_state.schedule = fixed_df
+    st.session_state.missing_staff = conflicts
+    st.session_state.violations = viols
+    st.success("✅ Δημιουργήθηκε πρόγραμμα.")
+
 
     st.divider()
 
@@ -569,35 +588,27 @@ def page_schedule():
             csv = st.session_state.schedule.to_csv(index=False).encode("utf-8-sig")
             b3.download_button("⬇️ Εξαγωγή CSV", data=csv, file_name="schedule.csv", mime="text/csv", key="dl_sched")
 
-        with right:
-            st.markdown("#### 📊 Σύνοψη")
-            if not edited.empty:
-                emp_hours = edited.groupby("Υπάλληλος")["Ώρες"].sum().sort_values(ascending=False)
-                for n, h in emp_hours.items():
-                    st.write(f"**{n}** — {int(h)} ώρες")
-
-            # One-click self-heal after manual edits
-            if st.button("🧹 Επανέλεγχος & Αυτο-διόρθωση", help="Εφάρμοσε όλους τους κανόνες στο τρέχον πρόγραμμα"):
-                # derive span & start from current schedule
-                cur = st.session_state.schedule.copy()
-                cur["Ημερομηνία"] = pd.to_datetime(cur["Ημερομηνία"], errors="coerce").dt.date
-                start = cur["Ημερομηνία"].min() if not cur.empty else dt.date.today()
-                span = len(cur["Ημερομηνία"].unique()) if not cur.empty else 7
-                fixed_df, conflicts, viols = gen(
-                    start,
+        if st.button("🧹 Επανέλεγχος & Αυτο-διόρθωση", help="Εφάρμοσε όλους τους κανόνες στο τρέχον πρόγραμμα"):
+            try:
+                from scheduler import auto_fix_schedule
+                fixed_df, viols = auto_fix_schedule(
+                    st.session_state.schedule,
                     st.session_state.employees,
                     company.get("active_shifts", []),
                     company.get("roles", []),
                     company.get("rules", {}),
                     company.get("role_settings", {}),
-                    span,
                     company.get("work_model", "5ήμερο"),
                 )
-                st.session_state.schedule = _ensure_schedule_df(fixed_df)
-                st.session_state.missing_staff = conflicts
-                st.session_state.violations = viols
-                st.success("🔧 Έγινε επανέλεγχος & διόρθωση.")
-                st.rerun()
+            except Exception:
+                fixed_df = st.session_state.schedule
+                viols = check_violations(fixed_df, company.get("rules", {}), company.get("work_model", "5ήμερο"))
+
+            st.session_state.schedule = fixed_df
+            st.session_state.violations = viols
+            st.success("🔧 Έγινε επανέλεγχος & διόρθωση.")
+            st.rerun()
+
 
     # Missing coverage
     miss = st.session_state.get("missing_staff", pd.DataFrame())
