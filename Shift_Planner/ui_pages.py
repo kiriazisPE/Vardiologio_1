@@ -430,50 +430,50 @@ def page_business():
 
 
 def page_schedule():
-
-    # Ασφαλές import του generator: smart → opt → v2
+    
+        # Επιλογή διαθέσιμου generator: smart → opt → v2 (από scheduler.py)
     import scheduler as S
     gen = getattr(S, "generate_schedule_smart", None) or \
           getattr(S, "generate_schedule_opt", None)   or \
           S.generate_schedule_v2
+    from scheduler import check_violations  # διαθέσιμο στο scheduler.py
+    # το auto_fix_schedule είναι προαιρετικό – αν λείπει, κάνουμε graceful fallback
+    try:
+        from scheduler import auto_fix_schedule
+    except Exception:
+        auto_fix_schedule = None
 
     back_to_company_selection("back_schedule")
     st.subheader("📅 Πρόγραμμα")
 
-    # Init state
+    # ---- Guards & init ----
     st.session_state.setdefault("schedule", pd.DataFrame())
     st.session_state.setdefault("missing_staff", pd.DataFrame())
     st.session_state.setdefault("violations", pd.DataFrame())
 
-    # Guards
     if "company" not in st.session_state or not st.session_state.get("company", {}).get("name"):
-        _empty_state("Δεν έχει επιλεγεί επιχείρηση.", ["Επιλέξτε επιχείρηση για να συνεχίσετε."], demo_button=True, on_demo=_demo_seed)
+        st.warning("🛈 Δεν έχει επιλεγεί επιχείρηση.")
         return
     if "employees" not in st.session_state or not st.session_state.employees:
-        _empty_state("Δεν υπάρχουν υπάλληλοι.", ["Προσθέστε προσωπικό για να δημιουργηθεί πρόγραμμα."], demo_button=True, on_demo=_demo_seed)
+        st.warning("🛈 Δεν υπάρχουν υπάλληλοι. Προσθέστε για να δημιουργηθεί πρόγραμμα.")
         return
 
     company = st.session_state.company
 
-    # KPI strip
-    sched = _ensure_schedule_df(st.session_state.get("schedule"))
-    c1, c2, c3, c4 = st.columns(4)
-    with c1: st.metric("Ημέρες", int(sched["Ημερομηνία"].nunique()) if not sched.empty else 0)
-    with c2: st.metric("Αναθέσεις", len(sched) if not sched.empty else 0)
-    with c3: st.metric("Άτομα", int(sched["Υπάλληλος"].nunique()) if not sched.empty else 0)
-    with c4: st.metric("Ρόλοι", int(sched["Ρόλος"].nunique()) if not sched.empty else 0)
-
-    # Options
+    # ---- Επιλογές δημιουργίας ----
     mode = st.radio("Τύπος", ["🗓️ Εβδομαδιαίο", "📅 Μηνιαίο"], key="mode_sched")
     days_count = 7 if mode == "🗓️ Εβδομαδιαίο" else 30
     start_date = st.date_input("Έναρξη", dt.date.today(), key="start_sched")
 
-    # --- inside page_schedule(), near your buttons section ---
+    cgen, cfix = st.columns([0.25, 0.35])
+    with cgen:
+        generate_clicked = st.button("🛠 Δημιουργία", type="primary", key="btn_generate")
+    with cfix:
+        refix_clicked = st.button("🧹 Επανέλεγχος & Αυτο-διόρθωση", help="Εφάρμοσε κανόνες στο τρέχον πρόγραμμα")
 
-    # 🛠 Generate schedule
-    if st.button("🛠 Δημιουργία", type="primary", key="btn_generate"):
-        # gen returns (df, missing_df)
-        df, conflicts = gen(
+    # ---- Generate ----
+    if generate_clicked:
+        df, missing_df = gen(
             start_date,
             st.session_state.employees,
             company.get("active_shifts", []),
@@ -483,10 +483,8 @@ def page_schedule():
             days_count,
             company.get("work_model", "5ήμερο"),
         )
-
-        # Optional "self-heal": try auto_fix_schedule, else just compute violations
-        try:
-            from scheduler import auto_fix_schedule
+        # Auto-fix αν υπάρχει, αλλιώς κάνε μόνο violations
+        if auto_fix_schedule:
             fixed_df, viols = auto_fix_schedule(
                 df,
                 st.session_state.employees,
@@ -496,20 +494,18 @@ def page_schedule():
                 company.get("role_settings", {}),
                 company.get("work_model", "5ήμερο"),
             )
-        except Exception:
-            from scheduler import check_violations  # ensure imported if you use this path
+        else:
             fixed_df = df
             viols = check_violations(df, company.get("rules", {}), company.get("work_model", "5ήμερο"))
 
         st.session_state.schedule = fixed_df
-        st.session_state.missing_staff = conflicts
+        st.session_state.missing_staff = missing_df
         st.session_state.violations = viols
         st.success("✅ Δημιουργήθηκε πρόγραμμα.")
 
-    # 🧹 Recheck & auto-fix current schedule
-    if st.button("🧹 Επανέλεγχος & Αυτο-διόρθωση", help="Εφάρμοσε όλους τους κανόνες στο τρέχον πρόγραμμα"):
-        try:
-            from scheduler import auto_fix_schedule
+    # ---- Re-check / Auto-fix ----
+    if refix_clicked and not st.session_state.schedule.empty:
+        if auto_fix_schedule:
             fixed_df, viols = auto_fix_schedule(
                 st.session_state.schedule,
                 st.session_state.employees,
@@ -519,34 +515,110 @@ def page_schedule():
                 company.get("role_settings", {}),
                 company.get("work_model", "5ήμερο"),
             )
-        except Exception:
-            from scheduler import check_violations
+        else:
             fixed_df = st.session_state.schedule
             viols = check_violations(fixed_df, company.get("rules", {}), company.get("work_model", "5ήμερο"))
-
         st.session_state.schedule = fixed_df
         st.session_state.violations = viols
         st.success("🔧 Έγινε επανέλεγχος & διόρθωση.")
         st.rerun()
 
+    # ====== VIEW SECTION (με KPIs, πρόγραμμα, υπάλληλοι, παραβιάσεις) ======
+    sched = st.session_state.schedule.copy()
 
+    # KPIs
+    st.divider()
+    st.markdown("#### 📈 KPIs Προγράμματος")
+    c1, c2, c3, c4 = st.columns(4)
+    if not sched.empty:
+        # normalized dates for μετρήσεις
+        try:
+            dser = pd.to_datetime(sched["Ημερομηνία"], errors="coerce").dt.date
+        except Exception:
+            dser = sched["Ημερομηνία"]
+        with c1: st.metric("Ημέρες", int(pd.Series(dser).nunique()))
+        with c2: st.metric("Αναθέσεις", int(len(sched)))
+        with c3: st.metric("Άτομα", int(sched["Υπάλληλος"].nunique()))
+        with c4: st.metric("Ρόλοι", int(sched["Ρόλος"].nunique()))
+    else:
+        with c1: st.metric("Ημέρες", 0)
+        with c2: st.metric("Αναθέσεις", 0)
+        with c3: st.metric("Άτομα", 0)
+        with c4: st.metric("Ρόλοι", 0)
 
-    # Missing coverage
+    # Πρόγραμμα (expandable)
+    st.markdown("#### 🗂️ Δεδομένα")
+    with st.expander("📄 Πρόγραμμα (Generated)", expanded=not sched.empty):
+        if sched.empty:
+            st.info("Δεν υπάρχει ακόμη πρόγραμμα. Πάτα «Δημιουργία».")
+        else:
+            try:
+                st.dataframe(sched, use_container_width=True, hide_index=True)
+            except TypeError:
+                st.dataframe(sched.style.hide(axis="index"), use_container_width=True)
+            # Export
+            csv = sched.to_csv(index=False).encode("utf-8-sig")
+            st.download_button("⬇️ Εξαγωγή CSV", data=csv, file_name="schedule.csv", mime="text/csv", key="dl_sched")
+
+    # Υπάλληλοι (dropdown με πληροφορία & πρόγραμμα ανά άτομο)
+    emps = st.session_state.employees or []
+    with st.expander("👥 Υπάλληλοι — πληροφορίες & πρόγραμμα", expanded=False):
+        if not emps:
+            st.info("Δεν υπάρχουν υπάλληλοι.")
+        else:
+            names = [e.get("name","") for e in emps]
+            sel = st.selectbox("Επιλέξτε υπάλληλο", ["—"] + names, index=0, key="emp_inspect")
+            if sel and sel != "—":
+                edata = next((e for e in emps if e.get("name","")==sel), {})
+                # Ρόλοι/Διαθεσιμότητα (παρουσίαση)
+                r = edata.get("roles") or edata.get("role") or []
+                if isinstance(r, str): r = [r]
+                av = edata.get("availability") or []
+                if isinstance(av, dict): av = [k for k, v in av.items() if v]
+
+                cL, cR = st.columns([0.4, 0.6])
+                with cL:
+                    st.markdown("**Ρόλοι**")
+                    st.write(", ".join(r) if r else "—")
+                    st.markdown("**Διαθεσιμότητα**")
+                    st.write(", ".join(av) if av else "—")
+                with cR:
+                    if not sched.empty:
+                        # Αναθέσεις υπαλλήλου + άθροισμα ωρών
+                        emp_sched = sched[sched["Υπάλληλος"] == sel].copy()
+                        try:
+                            emp_sched["Ημερομηνία"] = pd.to_datetime(emp_sched["Ημερομηνία"], errors="coerce").dt.date
+                        except Exception:
+                            pass
+                        total_h = int(pd.to_numeric(emp_sched.get("Ώρες", 0), errors="coerce").fillna(0).sum())
+                        st.metric("Σύνολο ωρών στο εύρος", total_h)
+                        if emp_sched.empty:
+                            st.info("Δεν υπάρχουν αναθέσεις για τον επιλεγμένο υπάλληλο.")
+                        else:
+                            try:
+                                st.dataframe(emp_sched.sort_values(["Ημερομηνία","Βάρδια","Ρόλος"]),
+                                             use_container_width=True, hide_index=True)
+                            except TypeError:
+                                st.dataframe(emp_sched.sort_values(["Ημερομηνία","Βάρδια","Ρόλος"]).style.hide(axis="index"),
+                                             use_container_width=True)
+
+    # Ελλείψεις (αν υπάρχουν)
     miss = st.session_state.get("missing_staff", pd.DataFrame())
     if miss is not None and not miss.empty:
-        st.divider()
-        st.markdown("#### Ελλείψεις στελέχωσης")
-        try:
-            st.dataframe(miss, use_container_width=True, hide_index=True)
-        except TypeError:
-            st.dataframe(miss.style.hide(axis="index"), use_container_width=True)
+        with st.expander("🧩 Ελλείψεις στελέχωσης", expanded=False):
+            try:
+                st.dataframe(miss, use_container_width=True, hide_index=True)
+            except TypeError:
+                st.dataframe(miss.style.hide(axis="index"), use_container_width=True)
 
-    # Violations
+    # Παραβιάσεις (πάντα σε ξεχωριστό dropdown)
     viols = st.session_state.get("violations", pd.DataFrame())
-    if viols is not None and not viols.empty:
-        st.divider()
-        st.markdown("#### ⚠️ Παραβιάσεις Κανόνων (μετά την αυτο-διόρθωση)")
-        try:
-            st.dataframe(viols, use_container_width=True, hide_index=True)
-        except TypeError:
-            st.dataframe(viols.style.hide(axis="index"), use_container_width=True)
+    with st.expander("⚠️ Παραβιάσεις Κανόνων (μετά την αυτο-διόρθωση)", expanded=False):
+        if viols is None or viols.empty:
+            st.success("Δεν εντοπίστηκαν παραβιάσεις.")
+        else:
+            try:
+                st.dataframe(viols, use_container_width=True, hide_index=True)
+            except TypeError:
+                st.dataframe(viols.style.hide(axis="index"), use_container_width=True)
+
