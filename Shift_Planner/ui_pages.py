@@ -17,6 +17,8 @@ from db import (
 from constants import ALL_SHIFTS, DEFAULT_ROLES, DEFAULT_RULES, SHIFT_TIMES, DAYS
 from scheduler import check_violations
 
+
+
 # ------------------------- Helpers ------------------------- #
 def page_employees():
     back_to_company_selection("back_employees")
@@ -428,7 +430,6 @@ def page_business():
 
 
 def page_schedule():
-    from scheduler import generate_schedule_smart  # self-healing generator
 
     back_to_company_selection("back_schedule")
     st.subheader("📅 Πρόγραμμα")
@@ -463,7 +464,7 @@ def page_schedule():
 
     # Generate
     if st.button("🛠 Δημιουργία", type="primary", key="btn_generate"):
-        df, conflicts, viols = generate_schedule_smart(
+        df, conflicts, viols = gen(
             start_date,
             st.session_state.employees,
             company.get("active_shifts", []),
@@ -576,7 +577,7 @@ def page_schedule():
                 cur["Ημερομηνία"] = pd.to_datetime(cur["Ημερομηνία"], errors="coerce").dt.date
                 start = cur["Ημερομηνία"].min() if not cur.empty else dt.date.today()
                 span = len(cur["Ημερομηνία"].unique()) if not cur.empty else 7
-                fixed_df, conflicts, viols = generate_schedule_smart(
+                fixed_df, conflicts, viols = gen(
                     start,
                     st.session_state.employees,
                     company.get("active_shifts", []),
