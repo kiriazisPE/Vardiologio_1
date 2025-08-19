@@ -15,7 +15,7 @@ from db import (
     delete_employee,
 )
 from constants import ALL_SHIFTS, DEFAULT_ROLES, DEFAULT_RULES, SHIFT_TIMES, DAYS
-from scheduler import generate_schedule_smart, check_violations
+from scheduler import check_violations
 
 # ------------------------- Helpers ------------------------- #
 def page_employees():
