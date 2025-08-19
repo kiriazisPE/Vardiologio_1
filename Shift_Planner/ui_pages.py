@@ -431,6 +431,12 @@ def page_business():
 
 def page_schedule():
 
+    # Ασφαλές import του generator: smart → opt → v2
+    import scheduler as S
+    gen = getattr(S, "generate_schedule_smart", None) or \
+          getattr(S, "generate_schedule_opt", None)   or \
+          S.generate_schedule_v2
+
     back_to_company_selection("back_schedule")
     st.subheader("📅 Πρόγραμμα")
 
