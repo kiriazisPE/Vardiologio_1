@@ -24,6 +24,7 @@ __all__ = [
     "auto_fix_schedule",
     "generate_schedule_opt",
     "check_violations",
+    "generate_schedule_smart",
 ]
 
 # ----------------------------
