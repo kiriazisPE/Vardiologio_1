@@ -25,11 +25,51 @@ __all__ = [
     "generate_schedule_opt",
     "check_violations",
     "generate_schedule_smart",
+    "generate_schedule",
 ]
 
 # ----------------------------
 # Helpers & Data structures
 # ----------------------------
+
+def generate_schedule_smart(
+    start_date,
+    employees,
+    active_shifts,
+    roles,
+    rules,
+    role_settings,
+    days_count,
+    work_model="5ήμερο",
+    weights=None,
+):
+    """
+    Prefer MILP optimizer if PuLP is available; otherwise fall back to the greedy v2.
+    Also guards any optimizer build/solve exceptions to ensure a safe fallback.
+    """
+    try:
+        import pulp  # noqa: F401
+    except Exception as e:
+        import traceback
+        print("PuLP not importable; using greedy v2:", e)
+        traceback.print_exc()
+        return generate_schedule_v2(
+            start_date, employees, active_shifts, roles, rules, role_settings, days_count, work_model
+        )
+    # PuLP present — attempt optimizer but guard failures explicitly
+    try:
+        return generate_schedule_opt(
+            start_date, employees, active_shifts, roles, rules, role_settings, days_count, work_model, weights
+        )
+    except Exception as e:
+        import traceback
+        print("MILP scheduling raised; falling back to greedy v2:", e)
+        traceback.print_exc()
+        return generate_schedule_v2(
+            start_date, employees, active_shifts, roles, rules, role_settings, days_count, work_model
+        )
+
+
 
 def _shift_len(shift: str) -> int:
     """Return the (positive) hours of a shift, handling wrap-around (e.g., 22→06)."""
@@ -69,57 +109,44 @@ class Assignment:
 # Rule checks
 # ----------------------------
 
-def check_violations(
-    df: pd.DataFrame,
-    rules: Dict,
-    work_model: str = "5ήμερο",
-) -> pd.DataFrame:
-    """
-    Validate a schedule DataFrame against labor rules.
 
-    Expected columns in df:
-      ["Ημέρα","Ημερομηνία","Βάρδια","Υπάλληλος","Ρόλος","Ώρες"]
+def check_violations(schedule_df, rules: dict, work_model: str = "5ήμερο"):
+    import pandas as pd
+    from datetime import datetime, timedelta
 
-    Rules (with defaults):
-      - max_daily_hours_5days / max_daily_hours_6days   (default 8 / 9)
-      - weekly_hours_5days / weekly_hours_6days         (default 40 / 48)
-      - min_daily_rest                                  (default 11)
-      - max_consecutive_days                            (default 6)
-
-    Returns:
-      DataFrame columns: ["Ημερομηνία","Υπάλληλος","Βάρδια","Ρόλος","Rule","Details","Severity"]
-    """
-    if df is None or df.empty:
-        return pd.DataFrame(columns=["Ημερομηνία","Υπάλληλος","Βάρδια","Ρόλος","Rule","Details","Severity"])
-
-    req_cols = {"Ημερομηνία", "Βάρδια", "Υπάλληλος", "Ρόλος", "Ώρες"}
-    missing = req_cols - set(df.columns)
-    if missing:
-        raise ValueError(f"Schedule is missing required columns: {missing}")
-
-    # Normalize
-    sched = df.copy()
-    sched["Ημερομηνία"] = pd.to_datetime(sched["Ημερομηνία"]).dt.date
-    sched["Ώρες"] = sched["Ώρες"].astype(int)
-
-    # Rule parameters (5/6-day models; extend easily for 7-day if needed)
-    if work_model.strip() == "5ήμερο":
+    # --- Rule parameters (by work model) ---
+    wm = (work_model or "").strip()
+    if wm == "5ήμερο":
         max_daily_hours = int(rules.get("max_daily_hours_5days", 8))
         weekly_hours_cap = int(rules.get("weekly_hours_5days", 40))
-    else:
+    elif wm == "6ήμερο":
         max_daily_hours = int(rules.get("max_daily_hours_6days", 9))
         weekly_hours_cap = int(rules.get("weekly_hours_6days", 48))
+    else:  # 7ήμερο
+        max_daily_hours = int(rules.get("max_daily_hours_7days", 9))
+        weekly_hours_cap = int(rules.get("weekly_hours_7days", 56))
+
     min_daily_rest = int(rules.get("min_daily_rest", 11))
     max_consecutive_days = int(rules.get("max_consecutive_days", 6))
+    monthly_hours_cap = int(rules.get("monthly_hours", 160))
 
-    viols = []
+    # --- Normalize dates/hours ---
+    df = schedule_df.copy()
+    df["Ημερομηνία"] = pd.to_datetime(df["Ημερομηνία"]).dt.date
+    if "Ώρες" not in df.columns:
+        # Fallback if caller didn't include hours per row
+        df["Ώρες"] = 0.0
 
-    # A) Max daily hours
-    daily = sched.groupby(["Υπάλληλος", "Ημερομηνία"])["Ώρες"].sum().reset_index()
-    for _, row in daily.iterrows():
+# De-duplicate exact duplicate assignment rows to avoid double-counting in aggregations
+df = df.drop_duplicates(subset=[c for c in ["Υπάλληλος","Ημερομηνία","Βάρδια","Ρόλος","Ώρες"] if c in df.columns])
+    violations = []
+
+    # --- A) Max daily hours per employee ---
+    daily_hours = df.groupby(["Υπάλληλος", "Ημερομηνία"], as_index=False)["Ώρες"].sum()
+    for _, row in daily_hours.iterrows():
         if row["Ώρες"] > max_daily_hours:
-            viols.append({
-                "Ημερομηνία": row["Ημερομηνία"] if "Ημερομηνία" in row else row["Ημερομηνία"],
+            violations.append({
+                "Ημερομηνία": row["Ημερομηνία"],
                 "Υπάλληλος": row["Υπάλληλος"],
                 "Βάρδια": "",
                 "Ρόλος": "",
@@ -128,84 +155,117 @@ def check_violations(
                 "Severity": "high",
             })
 
-    # B) Max weekly hours
-    def week_of(d: dt.date) -> int:
-        return d.isocalendar().week
-
-    sched["_week"] = sched["Ημερομηνία"].apply(week_of)
-    weekly = sched.groupby(["Υπάλληλος", "_week"])["Ώρες"].sum().reset_index()
-    for _, row in weekly.iterrows():
+    # --- B) Weekly hours cap (ISO week) ---
+    dt_series = pd.to_datetime(df["Ημερομηνία"])
+    df["_iso_year"] = dt_series.dt.isocalendar().year
+    df["_iso_week"] = dt_series.dt.isocalendar().week
+    weekly_hours = df.groupby(["Υπάλληλος", "_iso_year", "_iso_week"], as_index=False)["Ώρες"].sum()
+    for _, row in weekly_hours.iterrows():
         if row["Ώρες"] > weekly_hours_cap:
-            viols.append({
-                "Ημερομηνία": pd.NaT,  # whole-week violation
+            violations.append({
+                "Ημερομηνία": None,
                 "Υπάλληλος": row["Υπάλληλος"],
                 "Βάρδια": "",
                 "Ρόλος": "",
                 "Rule": "weekly_hours_cap",
-                "Details": f"{row['Ώρες']}h > {weekly_hours_cap}h (week {row['_week']})",
+                "Details": f"{row['Ώρες']}h > {weekly_hours_cap}h (ISO week {int(row['_iso_week'])})",
                 "Severity": "high",
             })
 
-    # C) Rest time (no close→open below min rest)
-    # For each employee, check any shift on day d and the earliest shift on d+1.
-    for emp, g in sched.groupby("Υπάλληλος"):
-        g = g.sort_values(["Ημερομηνία", "Βάρδια"])
-        # Build map date -> list of shifts
-        by_date = defaultdict(list)
-        for _, r in g.iterrows():
-            by_date[r["Ημερομηνία"]].append(r["Βάρδια"])
-        dates = sorted(by_date.keys())
-        for i, d in enumerate(dates[:-1]):
-            dn = dates[i + 1]
-            # For all prev shifts vs earliest next shift
-            next_start = None
-            if by_date[dn]:
-                next_start = min(_shift_start_hour(s) for s in by_date[dn])
-            if next_start is None:
-                continue
-            for s_prev in by_date[d]:
-                end_prev = _shift_end_hour(s_prev)
-                prev_end_abs = end_prev if end_prev < 24 else end_prev - 24
-                rest = (24 - prev_end_abs) + next_start
-                if rest < min_daily_rest:
-                    viols.append({
-                        "Ημερομηνία": dn,
+    # --- C) Monthly hours cap (calendar month) ---
+    df["_month"] = pd.to_datetime(df["Ημερομηνία"]).dt.to_period("M")
+    monthly_hours = df.groupby(["Υπάλληλος", "_month"], as_index=False)["Ώρες"].sum()
+    for _, row in monthly_hours.iterrows():
+        if row["Ώρες"] > monthly_hours_cap:
+            violations.append({
+                "Ημερομηνία": None,
+                "Υπάλληλος": row["Υπάλληλος"],
+                "Βάρδια": "",
+                "Ρόλος": "",
+                "Rule": "monthly_hours_cap",
+                "Details": f"{row['Ώρες']}h > {monthly_hours_cap}h ({row['_month']})",
+                "Severity": "medium",
+            })
+
+    # --- D) Max consecutive working days ---
+    for emp, sub in df.groupby("Υπάλληλος"):
+        worked_days = sorted(set(sub.loc[sub["Ώρες"] > 0, "Ημερομηνία"]))
+        if not worked_days:
+            continue
+        streak = 1
+        for i in range(1, len(worked_days)):
+            if worked_days[i] == worked_days[i - 1] + timedelta(days=1):
+                streak += 1
+                if streak > max_consecutive_days:
+                    violations.append({
+                        "Ημερομηνία": worked_days[i],
                         "Υπάλληλος": emp,
                         "Βάρδια": "",
                         "Ρόλος": "",
-                        "Rule": "min_daily_rest",
-                        "Details": f"rest {int(rest)}h < {min_daily_rest}h (prev: {s_prev})",
+                        "Rule": "max_consecutive_days",
+                        "Details": f"{streak} days > {max_consecutive_days}",
                         "Severity": "medium",
                     })
-                    # one violation per pair of days is enough
-                    break
-
-    # D) Max consecutive days
-    for emp, g in sched.groupby("Υπάλληλος"):
-        days = sorted(set(g["Ημερομηνία"]))
-        streak = 0
-        last = None
-        for d in days:
-            if last is None or d == last + dt.timedelta(days=1):
-                streak += 1
             else:
                 streak = 1
-            if streak > max_consecutive_days:
-                viols.append({
-                    "Ημερομηνία": d,
-                    "Υπάλληλος": emp,
-                    "Βάρδια": "",
-                    "Ρόλος": "",
-                    "Rule": "max_consecutive_days",
-                    "Details": f"{streak} consecutive days > {max_consecutive_days}",
-                    "Severity": "medium",
-                })
-            last = d
 
-    return pd.DataFrame(
-        viols,
-        columns=["Ημερομηνία", "Υπάλληλος", "Βάρδια", "Ρόλος", "Rule", "Details", "Severity"],
-    )
+    # --- E) Min daily rest between shifts (if start/end columns exist) ---
+    start_cols = [c for c in df.columns if c.lower() in ("start", "έναρξη", "starttime")]
+    end_cols   = [c for c in df.columns if c.lower() in ("end", "τέλος", "endtime")]
+    if start_cols and end_cols:
+        s_col, e_col = start_cols[0], end_cols[0]
+
+        # Expecting times as HH:MM or datetime; coerce to datetimes anchored on date
+        def _coerce_dt(d, t):
+    """Return (datetime_or_none, is_valid). Accepts:
+    - 'HH:MM', 'H:MM', 'HH.MM', 'H.M', 'HH', 'H'
+    - integers/floats (hours), strings with decimal separator '.' or ',' interpreted as hours (e.g., 9.5 => 09:30)
+    - datetime
+    If parsing fails or minutes are invalid, returns (None, False).
+    """
+    from datetime import datetime
+    import math
+    if pd.isna(t):
+        return None, False
+    if isinstance(t, datetime):
+        return t, True
+    try:
+        # Numeric types (including strings like '9.5')
+        if isinstance(t, (int, float)):
+            hh = int(math.floor(float(t)))
+            mm = int(round((float(t) - hh) * 60))
+            if mm == 60:
+                hh += 1; mm = 0
+            if not (0 <= hh <= 48 and 0 <= mm < 60):
+                return None, False
+            return datetime(d.year, d.month, d.day, int(hh) % 24, mm), True
+        s = str(t).strip()
+        s_num = s.replace(',', '.')
+        # If purely numeric with optional decimal
+        if re.fullmatch(r"\d+(?:[\.,]\d+)?", s):
+            val = float(s_num)
+            hh = int(math.floor(val))
+            mm = int(round((val - hh) * 60))
+            if mm == 60:
+                hh += 1; mm = 0
+            if not (0 <= hh <= 48 and 0 <= mm < 60):
+                return None, False
+            return datetime(d.year, d.month, d.day, int(hh) % 24, mm), True
+        # Replace '.' with ':' if it's a separator variant like '9.00'
+        s = s.replace('.', ':').replace(',', ':')
+        parts = s.split(':')
+        if len(parts) == 1:
+            hh, mm = int(parts[0]), 0
+        else:
+            hh, mm = int(parts[0]), int(parts[1])
+        if not (0 <= hh <= 48 and 0 <= mm < 60):  # basic sanity
+            return None, False
+        return datetime(d.year, d.month, d.day, int(hh) % 24, mm), True
+    except Exception:
+        return None, False
+
+# Return as DataFrame for UI consumption
+return pd.DataFrame(violations)
 
 
 # ----------------------------
@@ -255,11 +315,20 @@ def generate_schedule_v2(
     hours_by_emp_week: Dict[str, Counter] = defaultdict(Counter)
     last_shift_by_emp: Dict[str, tuple[dt.date, str]] = {}
 
-    max_daily_hours = int(rules.get("max_daily_hours_5days", 8 if work_model == "5ήμερο" else 9))
-    weekly_hours_cap = int(rules.get("weekly_hours_5days", 40 if work_model == "5ήμερο" else 48))
+    wm = work_model.strip()
+    if wm == "5ήμερο":
+        max_daily_hours = int(rules.get("max_daily_hours_5days", 8))
+        weekly_hours_cap = int(rules.get("weekly_hours_5days", 40))
+    elif wm == "6ήμερο":
+        max_daily_hours = int(rules.get("max_daily_hours_6days", 9))
+        weekly_hours_cap = int(rules.get("weekly_hours_6days", 48))
+    else:  # 7ήμερο
+        max_daily_hours = int(rules.get("max_daily_hours_7days", 9))
+        weekly_hours_cap = int(rules.get("weekly_hours_7days", 56))
     min_daily_rest = int(rules.get("min_daily_rest", 11))
+    max_consecutive_days = int(rules.get("max_consecutive_days", 6))
 
-    def week_of(d: dt.date) -> int:
+    def week_of_iso(d: dt.date) -> int:
         return d.isocalendar().week
 
     def can_assign(emp: Employee, d: dt.date, shift: str, role: str) -> bool:
@@ -270,17 +339,24 @@ def generate_schedule_v2(
         if cur_hours + _shift_len(shift) > max_daily_hours:
             return False
         # weekly cap
-        wk = week_of(d)
+        wk = week_of_iso(d)
         if hours_by_emp_week[emp.name][wk] + _shift_len(shift) > weekly_hours_cap:
             return False
-        # min rest against previous day
-        if emp.name in last_shift_by_emp and last_shift_by_emp[emp.name][0] == d - dt.timedelta(days=1):
-            end_h = _shift_end_hour(last_shift_by_emp[emp.name][1])
-            next_start = _shift_start_hour(shift)
-            prev_end_abs = end_h if end_h < 24 else end_h - 24
-            rest = (24 - prev_end_abs) + next_start
-            if rest < min_daily_rest:
-                return False
+        
+# min rest against previous day (compute precisely across midnight)
+if emp.name in last_shift_by_emp and last_shift_by_emp[emp.name][0] == d - dt.timedelta(days=1):
+    prev_date, prev_shift = last_shift_by_emp[emp.name]
+    end_h = _shift_end_hour(prev_shift)  # may be > 24 if wraps
+    # Anchor end on previous date (add a day if it wraps past midnight)
+    prev_end_dt = dt.datetime(prev_date.year, prev_date.month, prev_date.day, end_h % 24)
+    if end_h >= 24:
+        prev_end_dt += dt.timedelta(days=1)
+    start_h = _shift_start_hour(shift)
+    next_start_dt = dt.datetime(d.year, d.month, d.day, start_h)
+    hours_rest = (next_start_dt - prev_end_dt).total_seconds() / 3600.0
+    if hours_rest < min_daily_rest:
+        return False
+
         return True
 
     def score(emp: Employee, d: dt.date, shift: str, role: str) -> float:
@@ -292,7 +368,7 @@ def generate_schedule_v2(
         if shift in role_pref.get(role, []):
             sc += 3.0
         # Weekly fairness (prefer lower current weekly hours)
-        sc += max(0, 20 - hours_by_emp_week[emp.name][week_of(d)]) * 0.2
+        sc += max(0, 20 - hours_by_emp_week[emp.name][week_of_iso(d)]) * 0.2
         # Prefer employees not yet used that day
         if emp.name not in {a.employee for a in assigned if a.date == d}:
             sc += 1.0
@@ -322,7 +398,7 @@ def generate_schedule_v2(
                     best = max(candidates, key=lambda e: score(e, d, shift, role))
                     hrs = _shift_len(shift)
                     assigned.append(Assignment(d, shift, best.name, role, hrs))
-                    hours_by_emp_week[best.name][week_of(d)] += hrs
+                    hours_by_emp_week[best.name][week_of_iso(d)] += hrs
                     last_shift_by_emp[best.name] = (d, shift)
                     picks.append(best.name)
 
@@ -448,8 +524,7 @@ def generate_schedule_opt(
     weights: Dict | None = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    MILP-based scheduler using PuLP (CBC). Falls back to generate_schedule_v2 if PuLP is
-    unavailable.
+    MILP-based scheduler using PuLP (CBC). Falls back to generate_schedule_v2 if PuLP is unavailable.
 
     Hard constraints: availability, roles, daily/weekly hours, min rest, min coverage.
     Soft objectives: under/over coverage, role preferred shifts, role priority, fairness.
@@ -475,24 +550,29 @@ def generate_schedule_opt(
             av = [k for k, v in av.items() if v]
         Emps.append(Employee(id=i, name=e["name"], roles=e.get("roles", []) or [], availability=av))
 
-    # Helpers
-    def shift_len(s: str) -> int:
+    # Helpers (distinct local names to avoid confusion with module-level helpers)
+    def _slen(s: str) -> int:
         return _shift_len(s)
 
-    def shift_start(s: str) -> int:
+    def _sstart(s: str) -> int:
         return _shift_start_hour(s)
 
-    def shift_end(s: str) -> int:
+    def _send(s: str) -> int:
         return _shift_end_hour(s)
 
-    # Rules
-    if work_model.strip() == "5ήμερο":
+    # Rules by work model
+    wm = (work_model or "").strip()
+    if wm == "5ήμερο":
         max_daily_hours = int(rules.get("max_daily_hours_5days", 8))
         weekly_hours_cap = int(rules.get("weekly_hours_5days", 40))
-    else:
+    elif wm == "6ήμερο":
         max_daily_hours = int(rules.get("max_daily_hours_6days", 9))
         weekly_hours_cap = int(rules.get("weekly_hours_6days", 48))
+    else:
+        max_daily_hours = int(rules.get("max_daily_hours_7days", 9))
+        weekly_hours_cap = int(rules.get("weekly_hours_7days", 56))
     min_daily_rest = int(rules.get("min_daily_rest", 11))
+    max_consecutive_days = int(rules.get("max_consecutive_days", 6))
 
     # Role settings
     min_per = {r: max(0, int(role_settings.get(r, {}).get("min_per_shift", 1))) for r in roles}
@@ -529,20 +609,19 @@ def generate_schedule_opt(
     o = {(d, s, r): pulp.LpVariable(f"over_{d}_{s}_{r}",  lowBound=0) for d in dates for s in active_shifts for r in roles}
 
     # Fairness vars per employee-week
-    week_of = lambda d: d.isocalendar().week
-    weeks = sorted({week_of(d) for d in dates})
+    week_of_iso = lambda d: d.isocalendar().week
+    weeks = sorted({week_of_iso(d) for d in dates})
     H = {(e.name, w): pulp.LpVariable(f"H_{e.id}_w{w}", lowBound=0) for e in Emps for w in weeks}
     Devp = {(e.name, w): pulp.LpVariable(f"Devp_{e.id}_w{w}", lowBound=0) for e in Emps for w in weeks}
     Devn = {(e.name, w): pulp.LpVariable(f"Devn_{e.id}_w{w}", lowBound=0) for e in Emps for w in weeks}
 
     # --- Constraints ---
 
-    # Coverage with slacks
+    # Coverage with slacks (and soft cap via 'o')
     for d in dates:
         for s in active_shifts:
             for r in roles:
                 m += (pulp.lpSum(x[(e.name, d, s, r)] for e in Emps) + o[(d, s, r)] - u[(d, s, r)] == min_per.get(r, 0))
-                # Optional cap with soft overage
                 m += (pulp.lpSum(x[(e.name, d, s, r)] for e in Emps) <= max_per.get(r, 9999) + o[(d, s, r)])
 
     # At most one role per employee per (date, shift)
@@ -554,14 +633,14 @@ def generate_schedule_opt(
     # Daily hours cap
     for e in Emps:
         for d in dates:
-            m += pulp.lpSum(shift_len(s) * pulp.lpSum(x[(e.name, d, s, r)] for r in roles) for s in active_shifts) <= max_daily_hours
+            m += pulp.lpSum(_slen(s) * pulp.lpSum(x[(e.name, d, s, r)] for r in roles) for s in active_shifts) <= max_daily_hours
 
     # Weekly hours cap + define H(e, week)
     for e in Emps:
         for w in weeks:
-            relevant_dates = [d for d in dates if week_of(d) == w]
+            relevant_dates = [d for d in dates if week_of_iso(d) == w]
             m += H[(e.name, w)] == pulp.lpSum(
-                shift_len(s) * pulp.lpSum(x[(e.name, d, s, r)] for r in roles)
+                _slen(s) * pulp.lpSum(x[(e.name, d, s, r)] for r in roles)
                 for d in relevant_dates for s in active_shifts
             )
             m += H[(e.name, w)] <= weekly_hours_cap
@@ -572,8 +651,8 @@ def generate_schedule_opt(
             dn = dates[i + 1]
             for s_prev in active_shifts:
                 for s_next in active_shifts:
-                    end_prev = shift_end(s_prev)
-                    start_next = shift_start(s_next)
+                    end_prev = _send(s_prev)
+                    start_next = _sstart(s_next)
                     prev_end_abs = end_prev if end_prev < 24 else end_prev - 24
                     rest_hours = (24 - prev_end_abs) + start_next
                     if rest_hours < min_daily_rest:
@@ -583,20 +662,33 @@ def generate_schedule_opt(
                             <= 1
                         )
 
+    # Max consecutive days: in any (K+1)-day sliding window, at most K worked days
+    K = max_consecutive_days
+    if K > 0 and len(dates) >= K + 1:
+        for i in range(0, len(dates) - K):
+            window = dates[i:i + K + 1]
+            for e in Emps:
+                m += pulp.lpSum(
+                    pulp.lpSum(
+                        pulp.lpSum(x[(e.name, d, s, r)] for r in roles)
+                        for s in active_shifts
+                    )
+                    for d in window
+                ) <= K
+
     # Fairness targets per week (simple heuristic)
     T = {}
     for w in weeks:
-        relevant_dates = [d for d in dates if week_of(d) == w]
-        req_hours = sum(min_per.get(r, 0) * shift_len(s) for d in relevant_dates for s in active_shifts for r in roles)
+        relevant_dates = [d for d in dates if week_of_iso(d) == w]
+        req_hours = sum(min_per.get(r, 0) * _slen(s) for d in relevant_dates for s in active_shifts for r in roles)
         T[w] = req_hours / max(1, len(Emps))
-
     for e in Emps:
         for w in weeks:
             m += H[(e.name, w)] - T[w] == Devp[(e.name, w)] - Devn[(e.name, w)]
 
     # --- Objective ---
     obj = 0
-    obj += 100.0 * pulp.lpSum(u.values()) + 5.0 * pulp.lpSum(o.values())
+    obj += W["pen_under"] * pulp.lpSum(u.values()) + W["pen_over"] * pulp.lpSum(o.values())
 
     pref_terms = []
     prio_terms = []
@@ -609,11 +701,11 @@ def generate_schedule_opt(
                     prio_terms.append((10 - role_prio.get(r, 5)) * x[(e.name, d, s, r)])
 
     if pref_terms:
-        obj += -2.0 * pulp.lpSum(pref_terms)
+        obj += -W["w_pref"] * pulp.lpSum(pref_terms)
     if prio_terms:
-        obj += -1.0 * pulp.lpSum(prio_terms)
+        obj += -W["w_prio"] * pulp.lpSum(prio_terms)
 
-    obj += 0.5 * (pulp.lpSum(Devp.values()) + pulp.lpSum(Devn.values()))
+    obj += W["w_fair"] * (pulp.lpSum(Devp.values()) + pulp.lpSum(Devn.values()))
     m.setObjective(obj)
 
     # Solve
@@ -633,7 +725,7 @@ def generate_schedule_opt(
                         "Βάρδια": s,
                         "Υπάλληλος": name,
                         "Ρόλος": r,
-                        "Ώρες": shift_len(s),
+                        "Ώρες": _slen(s),
                     })
                 under = u[(d, s, r)].value()
                 if under and under > 1e-6:

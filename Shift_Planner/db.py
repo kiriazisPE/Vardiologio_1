@@ -4,9 +4,44 @@ from __future__ import annotations
 import sqlite3
 import json
 from contextlib import contextmanager
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 
 from constants import DB_FILE
+
+def _safe_json_loads(s: Optional[str], default):
+    """
+    Defensive JSON loader for legacy/malformed values.
+    Returns `default` on any parse error.
+    """
+    if s is None:
+        return default
+    try:
+        return json.loads(s)
+    except Exception:
+        return default
+
+def _ensure_list(x) -> List[Any]:
+    """Coerce values into a list. Scalars -> [scalar]; None -> []. Others -> []."""
+    if isinstance(x, list):
+        return x
+    if x is None:
+        return []
+    if isinstance(x, (str, int, float, bool)):
+        return [x]
+    return []
+
+def _ensure_dict(x) -> Dict[str, Any]:
+    """Coerce values into a dict. Non-dicts -> {}."""
+    return x if isinstance(x, dict) else {}
+
+def _ensure_availability(x):
+    """
+    Availability historically stored as list OR dict.
+    Keep either; otherwise normalize to empty list.
+    """
+    if isinstance(x, (list, dict)):
+        return x
+    return []
 
 
 # ---------------- Connection Helper ---------------- #
@@ -35,6 +70,7 @@ def init_db():
     Creates base tables if they do not exist.
     Also applies lightweight migrations for existing DBs:
       - add companies.active column if missing
+      - add schedule.role column if missing
       - enforce uniqueness on schedule via a unique index
       - helpful indexes for speed
     """
@@ -65,7 +101,7 @@ def init_db():
         )
         """)
 
-        # Schedule
+        # Schedule (now includes role)
         conn.execute("""
         CREATE TABLE IF NOT EXISTS schedule (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,6 +109,7 @@ def init_db():
             employee_id INTEGER NOT NULL,
             date TEXT NOT NULL,
             shift TEXT NOT NULL,
+            role TEXT DEFAULT NULL,
             FOREIGN KEY(company_id) REFERENCES companies(id) ON DELETE CASCADE,
             FOREIGN KEY(employee_id) REFERENCES employees(id) ON DELETE CASCADE
         )
@@ -98,9 +135,14 @@ def init_db():
 
         # ---------- Lightweight migrations ----------
         # Ensure 'active' exists on companies (older DBs)
-        cols = [r[1] for r in conn.execute("PRAGMA table_info(companies)").fetchall()]
-        if "active" not in cols:
+        cols_companies = [r[1] for r in conn.execute("PRAGMA table_info(companies)").fetchall()]
+        if "active" not in cols_companies:
             conn.execute("ALTER TABLE companies ADD COLUMN active INTEGER DEFAULT 1")
+
+        # Ensure 'role' exists on schedule (older DBs)
+        cols_sched = [r[1] for r in conn.execute("PRAGMA table_info(schedule)").fetchall()]
+        if "role" not in cols_sched:
+            conn.execute("ALTER TABLE schedule ADD COLUMN role TEXT DEFAULT NULL")
 
         # Enforce uniqueness for schedule (older DBs may lack the constraint)
         conn.execute("""
@@ -125,43 +167,58 @@ def get_company(company_id: int) -> Optional[Dict[str, Any]]:
         r = conn.execute("SELECT * FROM companies WHERE id=?", (company_id,)).fetchone()
         if not r:
             return None
+        active_shifts = _ensure_list(_safe_json_loads(r["active_shifts"], []))
+        roles = _ensure_list(_safe_json_loads(r["roles"], []))
+        rules = _ensure_dict(_safe_json_loads(r["rules"], {}))
+        role_settings = _ensure_dict(_safe_json_loads(r["role_settings"], {}))
         return {
             "id": r["id"],
             "name": r["name"],
-            "active_shifts": json.loads(r["active_shifts"] or "[]"),
-            "roles": json.loads(r["roles"] or "[]"),
-            "rules": json.loads(r["rules"] or "{}"),
-            "role_settings": json.loads(r["role_settings"] or "{}"),
+            "active_shifts": active_shifts,
+            "roles": roles,
+            "rules": rules,
+            "role_settings": role_settings,
             "work_model": r["work_model"] or "5ήμερο",
             "active": r["active"] if "active" in r.keys() else 1,
         }
 
 
 def create_company(name: str) -> None:
+    if not name or not str(name).strip():
+        raise ValueError("Company name cannot be empty.")
     with get_conn() as conn:
         conn.execute(
             "INSERT INTO companies (name, active_shifts, roles, rules, role_settings, work_model, active) "
             "VALUES (?, '[]', '[]', '{}', '{}', '5ήμερο', 1)",
-            (name,),
+            (str(name).strip(),),
         )
 
 
 def update_company(company_id: int, data: Dict[str, Any]) -> None:
+    # Guard name NOT NULL and avoid clobbering with None
     with get_conn() as conn:
+        current = conn.execute("SELECT name FROM companies WHERE id=?", (company_id,)).fetchone()
+        if not current:
+            raise ValueError("Company not found.")
+        name_val = data.get("name", current["name"])
+        if name_val is None:
+            name_val = current["name"]
+        name_val = str(name_val).strip()
+        if not name_val:
+            raise ValueError("Company name cannot be empty.")
+
+        active_shifts = json.dumps(_ensure_list(data.get("active_shifts", [])), ensure_ascii=False)
+        roles = json.dumps(_ensure_list(data.get("roles", [])), ensure_ascii=False)
+        rules = json.dumps(_ensure_dict(data.get("rules", {})), ensure_ascii=False)
+        role_settings = json.dumps(_ensure_dict(data.get("role_settings", {})), ensure_ascii=False)
+        work_model = data.get("work_model", "5ήμερο")
+        active = int(data.get("active", 1))
+
         conn.execute("""
             UPDATE companies
             SET active_shifts=?, roles=?, rules=?, role_settings=?, work_model=?, name=?, active=?
             WHERE id=?
-        """, (
-            json.dumps(data.get("active_shifts", []), ensure_ascii=False),
-            json.dumps(data.get("roles", []), ensure_ascii=False),
-            json.dumps(data.get("rules", {}), ensure_ascii=False),
-            json.dumps(data.get("role_settings", {}), ensure_ascii=False),
-            data.get("work_model", "5ήμερο"),
-            data.get("name"),
-            int(data.get("active", 1)),
-            company_id
-        ))
+        """, (active_shifts, roles, rules, role_settings, work_model, name_val, active, company_id))
 
 
 # ---------------- Employee Functions ---------------- #
@@ -188,10 +245,8 @@ def get_employees(company_id: int) -> List[Dict[str, Any]]:
         ).fetchall()
         out: List[Dict[str, Any]] = []
         for r in rows:
-            roles = json.loads(r["roles"] or "[]")
-            if isinstance(roles, str):  # backward-compat (single role stored as string)
-                roles = [roles] if roles else []
-            availability = json.loads(r["availability"] or "[]")
+            roles = _ensure_list(_safe_json_loads(r["roles"], []))
+            availability = _ensure_availability(_safe_json_loads(r["availability"], []))
             out.append({
                 "id": r["id"],
                 "name": r["name"],
@@ -204,24 +259,34 @@ def get_employees(company_id: int) -> List[Dict[str, Any]]:
 
 def add_employee(company_id: int, name: str, roles, availability) -> None:
     roles_list = _normalize_roles_for_store(roles)
+    availability = _ensure_availability(availability)
+    if not name or not str(name).strip():
+        raise ValueError("Employee name cannot be empty.")
     with get_conn() as conn:
+        # Validate company exists
+        comp = conn.execute("SELECT 1 FROM companies WHERE id=?", (company_id,)).fetchone()
+        if not comp:
+            raise ValueError("Company does not exist.")
         conn.execute("""
             INSERT INTO employees (company_id, name, roles, availability)
             VALUES (?,?,?,?)
         """, (company_id,
-              name,
+              str(name).strip(),
               json.dumps(roles_list, ensure_ascii=False),
               json.dumps(availability, ensure_ascii=False)))
 
 
 def update_employee(employee_id: int, name: str, roles, availability) -> None:
     roles_list = _normalize_roles_for_store(roles)
+    availability = _ensure_availability(availability)
+    if not name or not str(name).strip():
+        raise ValueError("Employee name cannot be empty.")
     with get_conn() as conn:
         conn.execute("""
             UPDATE employees
             SET name=?, roles=?, availability=?
             WHERE id=?
-        """, (name,
+        """, (str(name).strip(),
               json.dumps(roles_list, ensure_ascii=False),
               json.dumps(availability, ensure_ascii=False),
               employee_id))
@@ -233,19 +298,28 @@ def delete_employee(employee_id: int) -> None:
 
 
 # ---------------- Schedule Functions ---------------- #
-def add_schedule_entry(company_id: int, employee_id: int, date: str, shift: str) -> None:
+def add_schedule_entry(company_id: int, employee_id: int, date: str, shift: str, role: str | None = None) -> None:
+    # Validate FK membership early for better UX
     with get_conn() as conn:
+        emp = conn.execute("SELECT company_id FROM employees WHERE id=?", (employee_id,)).fetchone()
+        if not emp:
+            raise ValueError("Employee does not exist.")
+        if emp["company_id"] != company_id:
+            raise ValueError("Employee does not belong to the given company.")
+        # Upsert instead of silent ignore: update role if row exists
         conn.execute("""
-            INSERT OR IGNORE INTO schedule (company_id, employee_id, date, shift)
-            VALUES (?,?,?,?)
-        """, (company_id, employee_id, date, shift))
+            INSERT INTO schedule (company_id, employee_id, date, shift, role)
+            VALUES (?,?,?,?,?)
+            ON CONFLICT(company_id, employee_id, date, shift) DO UPDATE SET
+                role=excluded.role
+        """, (company_id, employee_id, date, shift, role))
 
 
 def get_schedule(company_id: int) -> List[Dict[str, Any]]:
     """Return all schedule entries for a company."""
     with get_conn() as conn:
         rows = conn.execute("""
-            SELECT s.id, s.date, s.shift,
+            SELECT s.id, s.date, s.shift, s.role,
                    e.name as employee_name, e.roles
             FROM schedule s
             JOIN employees e ON e.id = s.employee_id
@@ -254,13 +328,14 @@ def get_schedule(company_id: int) -> List[Dict[str, Any]]:
         """, (company_id,)).fetchall()
         result: List[Dict[str, Any]] = []
         for r in rows:
-            roles = json.loads(r["roles"] or "[]")
+            roles = _ensure_list(_safe_json_loads(r["roles"], []))
             result.append({
                 "id": r["id"],
                 "date": r["date"],
                 "shift": r["shift"],
+                "role": r["role"],
                 "employee_name": r["employee_name"],
-                "roles": roles if isinstance(roles, list) else ([roles] if roles else []),
+                "roles": roles,
             })
         return result
 
@@ -282,7 +357,8 @@ def clear_schedule_range(company_id: int, start_date: str, end_date: str) -> Non
 def get_schedule_range(company_id: int, start_date: str, end_date: str) -> List[Dict[str, Any]]:
     with get_conn() as conn:
         rows = conn.execute("""
-            SELECT s.id, s.date, s.shift, e.id as employee_id, e.name as employee_name, e.roles
+            SELECT s.id, s.date, s.shift, s.role,
+                   e.id as employee_id, e.name as employee_name, e.roles
             FROM schedule s
             JOIN employees e ON e.id = s.employee_id
             WHERE s.company_id=? AND s.date BETWEEN ? AND ?
@@ -290,13 +366,12 @@ def get_schedule_range(company_id: int, start_date: str, end_date: str) -> List[
         """, (company_id, start_date, end_date)).fetchall()
         out: List[Dict[str, Any]] = []
         for r in rows:
-            roles = json.loads(r["roles"] or "[]")
-            if isinstance(roles, str):
-                roles = [roles] if roles else []
+            roles = _ensure_list(_safe_json_loads(r["roles"], []))
             out.append({
                 "id": r["id"],
                 "date": r["date"],
                 "shift": r["shift"],
+                "role": r["role"],
                 "employee_id": r["employee_id"],
                 "employee_name": r["employee_name"],
                 "roles": roles,
@@ -316,29 +391,68 @@ def get_employee_id_by_name(company_id: int, name: str) -> Optional[int]:
 def bulk_save_week_schedule(company_id: int, assignments: List[Dict[str, Any]],
                             start_date: str, end_date: str) -> None:
     """
-    assignments: list of {employee_id, date (YYYY-MM-DD), shift}
+    assignments: list of {employee_id, date (YYYY-MM-DD), shift, role?}
     Clears existing rows in [start_date, end_date] for that company, then inserts all.
+    Now deduplicates input and upserts rows (no silent ignore).
     """
-    if not assignments:
-        # Still clear the week to allow "blanking" the schedule.
-        clear_schedule_range(company_id, start_date, end_date)
-        return
+    # Normalize and deduplicate input first (last wins on duplicate keys)
+    key = lambda a: (a["employee_id"], a["date"], a["shift"])
+    dedup: Dict[Tuple[int, str, str], Dict[str, Any]] = {}
+    for a in assignments or []:
+        if not a.get("employee_id") or not a.get("date") or not a.get("shift"):
+            # Skip malformed entries
+            continue
+        dedup[key(a)] = a  # last write wins
 
     with get_conn() as conn:
+        # Clear the target window
         conn.execute("""
             DELETE FROM schedule
             WHERE company_id=? AND date BETWEEN ? AND ?
         """, (company_id, start_date, end_date))
-        conn.executemany("""
-            INSERT OR IGNORE INTO schedule (company_id, employee_id, date, shift)
-            VALUES (?,?,?,?)
-        """, [(company_id, a["employee_id"], a["date"], a["shift"]) for a in assignments])
+
+        # Validate that employees exist & belong to company BEFORE inserting
+        emp_company = {
+            r["id"]: r["company_id"]
+            for r in conn.execute("SELECT id, company_id FROM employees WHERE company_id=?", (company_id,)).fetchall()
+        }
+
+        rows = [
+            (company_id, a["employee_id"], a["date"], a["shift"], a.get("role"))
+            for a in dedup.values()
+            if a["employee_id"] in emp_company and emp_company[a["employee_id"]] == company_id
+        ]
+
+        if rows:
+            conn.executemany("""
+                INSERT INTO schedule (company_id, employee_id, date, shift, role)
+                VALUES (?,?,?,?,?)
+                ON CONFLICT(company_id, employee_id, date, shift) DO UPDATE SET
+                    role=excluded.role
+            """, rows)
 
 
 # ---------------- Shift Swap Functions ---------------- #
 def create_swap_request(company_id: int, requester_id: int,
                         target_employee_id: int, date: str, shift: str) -> None:
     with get_conn() as conn:
+        # Validate employees and membership
+        req = conn.execute("SELECT id, company_id FROM employees WHERE id=?", (requester_id,)).fetchone()
+        tgt = conn.execute("SELECT id, company_id FROM employees WHERE id=?", (target_employee_id,)).fetchone()
+        if not req or not tgt:
+            raise ValueError("Requester and target must be valid employees.")
+        if req["company_id"] != company_id or tgt["company_id"] != company_id:
+            raise ValueError("Both employees must belong to the specified company.")
+        if requester_id == target_employee_id:
+            raise ValueError("Requester and target cannot be the same employee.")
+        # Ensure requester currently holds the shift being swapped
+        has_assignment = conn.execute(
+            "SELECT 1 FROM schedule WHERE company_id=? AND employee_id=? AND date=? AND shift=?",
+            (company_id, requester_id, date, shift)
+        ).fetchone()
+        if not has_assignment:
+            raise ValueError("Requester is not assigned to the given date/shift.")
+
         conn.execute("""
             INSERT INTO shift_swaps (company_id, requester_id, target_employee_id, date, shift, status)
             VALUES (?,?,?,?,?,'pending')
@@ -376,15 +490,23 @@ def apply_approved_swap(company_id: int, date: str, shift: str,
     If target had the same (rare), swap back to requester.
     """
     with get_conn() as conn:
-        # requester → target
+        # Atomic, conflict-free swap in a single statement.
+        # This avoids a transient duplicate (company_id, employee_id, date, shift) that would violate idx_schedule_unique.
         conn.execute("""
             UPDATE schedule
-            SET employee_id=?
-            WHERE company_id=? AND employee_id=? AND date=? AND shift=?
-        """, (target_employee_id, company_id, requester_id, date, shift))
-        # target → requester (if any)
-        conn.execute("""
-            UPDATE schedule
-            SET employee_id=?
-            WHERE company_id=? AND employee_id=? AND date=? AND shift=?
-        """, (requester_id, company_id, target_employee_id, date, shift))
+            SET employee_id = CASE
+                WHEN employee_id = :requester THEN :target
+                WHEN employee_id = :target THEN :requester
+                ELSE employee_id
+            END
+            WHERE company_id = :company_id
+              AND date = :date
+              AND shift = :shift
+              AND employee_id IN (:requester, :target)
+        """, {
+            "company_id": company_id,
+            "date": date,
+            "shift": shift,
+            "requester": requester_id,
+            "target": target_employee_id,
+        })
