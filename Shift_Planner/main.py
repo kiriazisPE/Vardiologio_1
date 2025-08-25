@@ -19,7 +19,14 @@ st.set_page_config(page_title="Shift Planner Pro", page_icon="🗓️", layout="
 # -------------------------
 
 def _qp_get(key: str, default: str):
-    val = st.query_params.get(key, default)
+    """Safe query param getter across Streamlit versions."""
+    try:
+        qp = getattr(st, "query_params", None)
+        if qp is None:
+            return default
+        val = qp.get(key, default)
+    except Exception:
+        return default
     if isinstance(val, list):
         return val[0] if val else default
     return val
@@ -183,10 +190,9 @@ table { font-size: 0.92rem; }
 # -------------------------
 # App imports
 # -------------------------
-from .db import init_db, get_all_companies, create_company
-# FIX: use absolute import so running `python main.py` works
-from .ui_pages import page_select_company, page_business, page_employees, page_schedule
-
+# Changed to absolute imports so `python main.py` works without packaging.
+from db import init_db, get_all_companies, create_company  # CHANGED
+from ui_pages import page_select_company, page_business, page_employees, page_schedule  # CHANGED
 
 AUTH_ENABLED = os.getenv("AUTH_ENABLED", "true").strip().lower() in ("1", "true", "yes")
 st.set_option("client.showErrorDetails", True)
@@ -290,7 +296,10 @@ def _progress_value() -> int:
     employees_ready = 1 if len(st.session_state.get("employees", [])) > 0 else 0
     sched = st.session_state.get("schedule", None)
     try:
-        schedule_ready = 1 if (hasattr(sched, "empty") and sched is not None and not sched.empty) else 0
+        if sched is None:
+            schedule_ready = 0
+        else:
+            schedule_ready = 1 if hasattr(sched, "empty") and not sched.empty else 0
     except Exception:
         schedule_ready = 0
     return int(company_ready * 33 + employees_ready * 33 + schedule_ready * 34)
@@ -344,11 +353,18 @@ def main():
                 st.query_params.update({"theme": new_mode})
             except Exception:
                 pass
-            st.rerun()
+            try:
+                st.rerun()
+            except Exception:
+                pass
 
         # Persist in URL (mapping syntax)
-        current_theme = st.query_params.get("theme")
-        current_theme = current_theme[0] if isinstance(current_theme, list) else current_theme
+        try:
+            current_theme = st.query_params.get("theme")
+            current_theme = current_theme[0] if isinstance(current_theme, list) else current_theme
+        except Exception:
+            current_theme = None
+
         if current_theme != st.session_state["theme_mode"]:
             try:
                 st.query_params.update({"theme": st.session_state["theme_mode"]})
