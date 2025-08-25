@@ -217,7 +217,8 @@ def _auth_gate():
         return
 
     app_env = os.getenv("APP_ENV", "dev").lower()  # dev|prod  # dev|prod
-    cfg_path = "C:\\Users\\akiri\\Documents\\GitHub\\Vardiologio\\.streamlit\\auth.yaml"
+    cfg_path = r"C:\Users\akiri\OneDrive\Documents\GitHub\Vardiologio_1\.streamlit\auth.yaml"
+
 
     authenticator = None
     try:
