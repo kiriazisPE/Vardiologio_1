@@ -1,7 +1,23 @@
-streamlit==1.38.0
-streamlit-authenticator==0.4.1
-pandas==2.2.2
-Pillow==10.4.0
-PyYAML==6.0.2
-pulp==2.7.0           # optional; MILP optimizer will auto-fallback if missing
-python-dotenv==1.0.1
+# Core app
+streamlit>=1.32
+pandas>=2.2
+numpy>=1.26
+
+# Database
+sqlite3-binary  # stdlib sqlite3 is fine, but some environments want this
+
+# Scheduling / Optimization
+pulp>=2.9       # for MILP optimizer (CBC)
+python-dateutil>=2.9
+
+# Auth & Security
+streamlit-authenticator>=0.3
+pyyaml>=6.0
+bcrypt>=4.1
+
+# Config & Environment
+python-dotenv>=1.0
+Pillow>=10.2    # for logo images
+
+# Optional / Dev
+watchdog>=3.0   # hot-reload stability in Streamlit
