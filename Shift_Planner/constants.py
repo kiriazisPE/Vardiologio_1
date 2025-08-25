@@ -3,9 +3,11 @@
 Centralized constants & small utilities for the scheduling app.
 
 Changes in this version:
+- Reintroduced DEFAULT_RULES as a compatibility alias so legacy imports don’t break.
 - Normalize rule keys by work model (5/6/7-day) and remove unused/ambiguous keys.
 - Provide a helper `get_rules(work_model)` to fetch the correct rules for engines.
 - Make time calculations float-friendly (supports 7.5h etc.).
+- Align type hints to float where fractional hours are possible.
 """
 from __future__ import annotations
 from datetime import datetime, timedelta, time
@@ -49,7 +51,7 @@ EXTRA_ROLES = ["Υποδοχή", "Καθαριστής", "Λαντζέρης", "
 
 # ---------- Labor Rules ----------
 # Common limits used across models
-RULES_COMMON = {
+RULES_COMMON: Dict[str, float] = {
     "max_daily_overtime": 3.0,  # hours of OT allowed in a single day
     "min_daily_rest": 11.0,     # minimum rest between shifts in hours
     "weekly_rest_hours": 24.0,  # weekly continuous rest
@@ -92,9 +94,27 @@ def get_rules(work_model: str | None = None) -> Dict[str, float]:
     if model not in RULES_BY_MODEL:
         logger.warning("Unknown work model '%s'; falling back to %s", model, DEFAULT_WORK_MODEL)
         model = DEFAULT_WORK_MODEL
-    merged = {**RULES_COMMON, **RULES_BY_MODEL[model], "work_model": model}
-    return merged
+    merged: Dict[str, float] = {**RULES_COMMON, **RULES_BY_MODEL[model]}
+    merged_with_model = {**merged, "work_model": model}
+    return merged_with_model
 
+# Back-compat layer: expose DEFAULT_RULES with the same keys older code expected.
+# Maps the selected model into a flat dictionary resembling the older structure.
+# Note: Prefer get_rules() going forward.
+DEFAULT_RULES: Dict[str, float] = {
+    "max_daily_hours_5days": RULES_BY_MODEL["5ήμερο"]["max_daily_hours"],
+    "max_daily_hours_6days": RULES_BY_MODEL["6ήμερο"]["max_daily_hours"],
+    "max_daily_hours_7days": RULES_BY_MODEL["7ήμερο"]["max_daily_hours"],
+    "max_daily_overtime": RULES_COMMON["max_daily_overtime"],
+    "min_daily_rest": RULES_COMMON["min_daily_rest"],
+    "weekly_hours_5days": RULES_BY_MODEL["5ήμερο"]["weekly_hours"],
+    "weekly_hours_6days": RULES_BY_MODEL["6ήμερο"]["weekly_hours"],
+    "weekly_hours_7days": RULES_BY_MODEL["7ήμερο"]["weekly_hours"],
+    "weekly_rest_hours": RULES_COMMON["weekly_rest_hours"],
+    "monthly_hours": RULES_COMMON["monthly_hours"],
+    "max_consecutive_days": RULES_BY_MODEL["5ήμερο"]["max_consecutive_days"],  # consistent default
+    "work_model": DEFAULT_WORK_MODEL,
+}
 
 # ---------- Utility Functions (float-aware) ----------
 

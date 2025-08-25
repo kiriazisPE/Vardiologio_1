@@ -45,7 +45,8 @@ def init_db():
                 roles TEXT DEFAULT '[]',
                 rules TEXT DEFAULT '{}',
                 role_settings TEXT DEFAULT '{}',
-                work_model TEXT DEFAULT '5ήμερο'
+                work_model TEXT DEFAULT '5ήμερο',
+                active INTEGER DEFAULT 1
             )
             """
         )
@@ -78,13 +79,7 @@ def init_db():
             """
         )
 
-        # Backfill new columns for existing DBs
-        if not _has_column(conn, "companies", "active"):
-            conn.execute("ALTER TABLE companies ADD COLUMN active INTEGER DEFAULT 1;")
-        if not _has_column(conn, "schedule", "role"):
-            conn.execute("ALTER TABLE schedule ADD COLUMN role TEXT;")
-
-        # Swap requests table used by the UI
+        # swap_requests (new/extended)
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS swap_requests (
@@ -93,9 +88,11 @@ def init_db():
                 from_employee_id INTEGER NOT NULL,
                 to_employee_id INTEGER NOT NULL,
                 date TEXT NOT NULL,
-                shift_from TEXT NOT NULL,
-                shift_to TEXT NOT NULL,
+                shift_from TEXT,
+                shift_to TEXT,
+                shift TEXT,
                 status TEXT NOT NULL DEFAULT 'pending',
+                note TEXT,
                 created_at TEXT DEFAULT (datetime('now')),
                 FOREIGN KEY(company_id) REFERENCES companies(id) ON DELETE CASCADE,
                 FOREIGN KEY(from_employee_id) REFERENCES employees(id) ON DELETE CASCADE,
@@ -103,6 +100,24 @@ def init_db():
             )
             """
         )
+
+        # Backfill/alter for existing DBs
+        try:
+            conn.execute("ALTER TABLE companies ADD COLUMN active INTEGER DEFAULT 1;")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE schedule ADD COLUMN role TEXT;")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE swap_requests ADD COLUMN shift TEXT;")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE swap_requests ADD COLUMN note TEXT;")
+        except sqlite3.OperationalError:
+            pass
 
 # -----------------------------
 # Companies
@@ -298,13 +313,40 @@ def get_schedule_range(company_id: int, start_date: str, end_date: str) -> List[
         ]
 
 
-def bulk_save_week_schedule(company_id: int, entries: Iterable[Dict]) -> None:
-    """Save a week's schedule transactionally.
+def bulk_save_week_schedule(company_id: int, start_date: str, end_date: str, entries: Iterable[Dict]) -> None:
+    """Save a week's schedule transactionally over an inclusive date window.
 
-    entries: iterable of dicts with keys {date, employee_id, shift, role}.
-    Strategy: delete any existing rows for (company_id, date) in the set of dates provided,
-    then insert the provided rows.
+    UI calls with 4 args: (company_id, start_date, end_date, entries).
+    We delete existing rows for [start_date, end_date] and then insert the provided entries
+    (ignoring any entry outside the window for safety).
     """
+    entries = [e for e in entries if start_date <= e.get("date", "") <= end_date]
+    if not entries:
+        with get_conn() as conn:
+            conn.execute("DELETE FROM schedule WHERE company_id=? AND date>=? AND date<=?", (company_id, start_date, end_date))
+        return
+
+    with get_conn() as conn:
+        conn.execute("DELETE FROM schedule WHERE company_id=? AND date>=? AND date<=?", (company_id, start_date, end_date))
+        conn.executemany(
+            """
+            INSERT INTO schedule (company_id, employee_id, date, shift, role)
+            VALUES (?,?,?,?,?)
+            """,
+            [
+                (
+                    company_id,
+                    int(e["employee_id"]),
+                    e["date"],
+                    e["shift"],
+                    e.get("role"),
+                )
+                for e in entries
+            ],
+        )
+
+   
+    
     entries = list(entries)
     if not entries:
         return
@@ -339,96 +381,110 @@ def clear_schedule(company_id: int) -> None:
 # Swap Requests API
 # -----------------------------
 
-def create_swap_request(
-    company_id: int,
-    from_employee_id: int,
-    to_employee_id: int,
-    date: str,
-    shift_from: str,
-    shift_to: str,
-) -> int:
+def create_swap_request(company_id: int, from_employee_id: int, to_employee_id: int, date: str, shift: str) -> int:
+    """UI signature: (company_id, from_id, to_id, date, shift). Store a single shift.
+    For backward compatibility we also populate shift_from/shift_to with the same value.
+    """
     with get_conn() as conn:
         cur = conn.execute(
             """
-            INSERT INTO swap_requests (company_id, from_employee_id, to_employee_id, date, shift_from, shift_to, status)
-            VALUES (?,?,?,?,?,?, 'pending')
+            INSERT INTO swap_requests (company_id, from_employee_id, to_employee_id, date, shift, shift_from, shift_to, status)
+            VALUES (?,?,?,?,?, ?, ?, 'pending')
             """,
-            (company_id, from_employee_id, to_employee_id, date, shift_from, shift_to),
+            (company_id, from_employee_id, to_employee_id, date, shift, shift, shift),
         )
         return int(cur.lastrowid)
 
 
+from typing import Optional, List, Dict
+
 def list_swap_requests(company_id: int, status: Optional[str] = None) -> List[Dict]:
+    """
+    Return rows shaped for the UI, including names and normalized field names.
+    Fields: id, date, shift, status, note, created_at, requester_id, target_employee_id, requester_name, target_name
+    """
     with get_conn() as conn:
+        base_sql = """
+            SELECT sr.id,
+                   sr.date,
+                   COALESCE(sr.shift, sr.shift_from, sr.shift_to) AS shift,
+                   sr.status,
+                   sr.note,
+                   sr.created_at,
+                   sr.from_employee_id AS requester_id,
+                   sr.to_employee_id   AS target_employee_id,
+                   ef.name AS requester_name,
+                   et.name AS target_name
+            FROM swap_requests sr
+            JOIN employees ef ON ef.id = sr.from_employee_id
+            JOIN employees et ON et.id = sr.to_employee_id
+            WHERE sr.company_id = ? {status_clause}
+            ORDER BY sr.created_at DESC
+        """
         if status:
-            rows = conn.execute(
-                "SELECT * FROM swap_requests WHERE company_id=? AND status=? ORDER BY created_at DESC",
-                (company_id, status),
-            ).fetchall()
+            sql = base_sql.format(status_clause="AND sr.status = ?")
+            rows = conn.execute(sql, (company_id, status)).fetchall()
         else:
-            rows = conn.execute(
-                "SELECT * FROM swap_requests WHERE company_id=? ORDER BY created_at DESC",
-                (company_id,),
-            ).fetchall()
+            sql = base_sql.format(status_clause="")
+            rows = conn.execute(sql, (company_id,)).fetchall()
         return [dict(r) for r in rows]
 
 
-def update_swap_status(request_id: int, status: str) -> None:
+def update_swap_status(request_id: int, status: str, note: Optional[str] = None) -> None:
+    """
+    Update status (pending|approved|rejected|applied) and optional note.
+    """
     if status not in {"pending", "approved", "rejected", "applied"}:
         raise ValueError("Invalid status")
     with get_conn() as conn:
-        conn.execute("UPDATE swap_requests SET status=? WHERE id=?", (status, request_id))
+        conn.execute(
+            "UPDATE swap_requests SET status = ?, note = ? WHERE id = ?",
+            (status, note, request_id),
+        )
 
 
-def apply_approved_swap(request_id: int) -> bool:
-    """Apply an approved swap by exchanging shifts in the schedule.
+def apply_approved_swap(company_id: int, date: str, shift: str,
+                        requester_id: int, target_id: int) -> bool:
+    """
+    UI signature: (company_id, date, shift, requester_id, target_id)
 
-    Returns True if rows were updated, False otherwise.
+    Behavior: move the (date, shift) assignment from requester to target.
+    If the target already has an assignment for the same (date, shift), we drop the duplicate
+    before reassigning. Returns True if a change was applied.
     """
     with get_conn() as conn:
-        req = conn.execute(
-            "SELECT * FROM swap_requests WHERE id=?", (request_id,)
+        # Find the requester's existing assignment for that date/shift
+        row_req = conn.execute(
+            "SELECT id FROM schedule WHERE company_id = ? AND employee_id = ? AND date = ? AND shift = ?",
+            (company_id, requester_id, date, shift),
         ).fetchone()
-        if not req:
-            return False
-        if req["status"] != "approved":
-            return False
-
-        company_id = req["company_id"]
-        date = req["date"]
-        from_id = req["from_employee_id"]
-        to_id = req["to_employee_id"]
-        shift_from = req["shift_from"]
-        shift_to = req["shift_to"]
-
-        # Find the current schedule rows
-        row_from = conn.execute(
-            """
-            SELECT * FROM schedule WHERE company_id=? AND employee_id=? AND date=? AND shift=?
-            """,
-            (company_id, from_id, date, shift_from),
-        ).fetchone()
-        row_to = conn.execute(
-            """
-            SELECT * FROM schedule WHERE company_id=? AND employee_id=? AND date=? AND shift=?
-            """,
-            (company_id, to_id, date, shift_to),
-        ).fetchone()
-
-        if not row_from or not row_to:
+        if not row_req:
             return False
 
-        # Swap: update the shifts (and keep roles with the assignment)
+        # Ensure the target has no duplicate assignment for that slot
         conn.execute(
-            "UPDATE schedule SET employee_id=? WHERE id=?",
-            (to_id, row_from["id"]),
+            "DELETE FROM schedule WHERE company_id = ? AND employee_id = ? AND date = ? AND shift = ?",
+            (company_id, target_id, date, shift),
         )
+
+        # Reassign the schedule row to the target
         conn.execute(
-            "UPDATE schedule SET employee_id=? WHERE id=?",
-            (from_id, row_to["id"]),
+            "UPDATE schedule SET employee_id = ? WHERE id = ?",
+            (target_id, row_req["id"]),
         )
+
+        # Mark matching swap requests as applied (covers shift/shift_from/shift_to)
         conn.execute(
-            "UPDATE swap_requests SET status='applied' WHERE id=?",
-            (request_id,),
+            """
+            UPDATE swap_requests
+            SET status = 'applied'
+            WHERE company_id = ?
+              AND date = ?
+              AND COALESCE(shift, shift_from, shift_to) = ?
+              AND from_employee_id = ?
+              AND to_employee_id   = ?
+              AND status IN ('pending','approved')
+            """,
+            (company_id, date, shift, requester_id, target_id),
         )
         return True
