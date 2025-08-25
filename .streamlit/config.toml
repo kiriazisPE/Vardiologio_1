@@ -7,6 +7,14 @@ secondaryBackgroundColor = "#F6F8FB"
 textColor = "#0F172A"
 font = "sans serif"
 
+[theme]
+base="dark"  # choose "light" or "dark" as default
+primaryColor="#7C3AED"   # violet-600
+backgroundColor="#0E1117"
+secondaryBackgroundColor="#0044fdff"
+textColor="#E5E7EB"
+font="sans serif"
+
 
 # Optional, nice-to-haves:
 # [client]

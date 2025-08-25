@@ -30,7 +30,7 @@ __all__ = [
 # Helpers & Data structures
 # ----------------------------
 
-def _shift_len(shift: str) -> int:
+def _shift_len(shift: str) -> float:
     """Return the (positive) hours of a shift, handling wrap-around (e.g., 22→06)."""
     s, e = SHIFT_TIMES.get(shift, (9, 17))
     return (24 - s + e) if e < s else (e - s)
@@ -44,11 +44,11 @@ def _weekday_name(d: dt.date) -> str:
     return DAYS[d.weekday()]
 
 
-def _shift_start_hour(shift: str) -> int:
+def _shift_start_hour(shift: str) -> float:
     return SHIFT_TIMES.get(shift, (9, 17))[0]
 
 
-def _shift_end_hour(shift: str) -> int:
+def _shift_end_hour(shift: str) -> float:
     s, e = SHIFT_TIMES.get(shift, (9, 17))
     return e if e >= s else e + 24  # allow wrap past midnight (e.g., 02:00 → 26)
 
@@ -67,7 +67,7 @@ class Assignment:
     shift: str
     employee: str
     role: str
-    hours: int
+    hours: float
 
 
 # ----------------------------
@@ -86,7 +86,7 @@ def _pick_rule(rules: Dict, key_5: str, key_6: str, key_7: str, work_model: str,
     return type(default_5)(rules.get(key_5, default_5))
 
 
-def _rest_hours_across_days(end_prev: int, next_start: int, min_daily_rest: int) -> float:
+def _rest_hours_across_days(end_prev: float, next_start: float, min_daily_rest: int) -> float:
     """Compute rest from previous day's end hour (possibly ≥24) to next day's start.
     - If previous shift wraps past midnight, end_prev will be ≥24 (e.g., 31 for 23→07).
     - In that case rest is next_start - (end_prev % 24).
@@ -379,7 +379,7 @@ def generate_schedule_v2(
                         })
                         break
                     best = max(candidates, key=lambda e: score(e, d, shift, role))
-                    hrs = _shift_len(shift)
+                    hrs = float(_shift_len(shift))
                     assigned.append(Assignment(d, shift, best.name, role, hrs))
                     hours_by_emp_week[best.name][week_of(d)] += hrs
                     last_shift_by_emp[best.name] = (d, shift)
@@ -536,13 +536,13 @@ def generate_schedule_opt(
         Emps.append(Employee(id=i, name=e["name"], roles=e.get("roles", []) or [], availability=av))
 
     # Helpers
-    def shift_len(s: str) -> int:
+    def shift_len(s: str) -> float:
         return _shift_len(s)
 
-    def shift_start(s: str) -> int:
+    def shift_start(s: str) -> float:
         return _shift_start_hour(s)
 
-    def shift_end(s: str) -> int:
+    def shift_end(s: str) -> float:
         return _shift_end_hour(s)
 
     # Rules
