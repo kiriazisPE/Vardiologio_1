@@ -1,406 +1,247 @@
 # -*- coding: utf-8 -*-
+"""
+main.py — Streamlit runner, theming, auth (refactored)
+- Centralized settings via Settings dataclass
+- Dark-mode toggle flicker guard
+- Page config only in Streamlit context
+- Safe theme application and logo loading with fallbacks
+- Idempotent DB init (if db.py is present) + seed default company if empty
+"""
+from __future__ import annotations
+
 import os
-import yaml
-import pandas as pd
+from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
+from typing import Callable, Optional
+
 import streamlit as st
 from PIL import Image
 from dotenv import load_dotenv
 
-# Load .env early
+# Load .env early (safe outside Streamlit)
 load_dotenv()
 
 # -------------------------
-# Page config (must run first)
-# -------------------------
-st.set_page_config(page_title="Shift Planner Pro", page_icon="🗓️", layout="wide")
-
-# -------------------------
-# URL helpers (no experimental APIs)
+# Settings
 # -------------------------
 
-def _qp_get(key: str, default: str):
-    """Safe query param getter across Streamlit versions."""
+@dataclass(frozen=True)
+class Settings:
+    app_env: str = os.getenv("APP_ENV", "dev")
+    show_errors: bool = os.getenv("SHOW_ERRORS", "1") in {"1", "true", "True"}
+    auth_enabled: bool = os.getenv("AUTH_ENABLED", "0") in {"1", "true", "True"}
+    dev_auth_fallback: bool = os.getenv("DEV_AUTH_FALLBACK", "1") in {"1", "true", "True"}
+    page_title: str = os.getenv("APP_TITLE", "🧭 Διαχείριση Βαρδιών")
+    page_icon: str = os.getenv("APP_ICON", "🧭")
+    default_dark: bool = os.getenv("DEFAULT_DARK", "1") in {"1", "true", "True"}
+    sidebar_logo_path: str = os.getenv("SIDEBAR_LOGO", "")
+    top_logo_path: str = os.getenv("TOP_LOGO", "")
+
+SETTINGS = Settings()
+
+
+# -------------------------
+# Helpers
+# -------------------------
+
+def _has_streamlit_ctx() -> bool:
     try:
-        qp = getattr(st, "query_params", None)
-        if qp is None:
-            return default
-        val = qp.get(key, default)
+        _ = st.session_state  # type: ignore[attr-defined]
+        return True
     except Exception:
-        return default
-    if isinstance(val, list):
-        return val[0] if val else default
-    return val
-
-# Initialize theme from URL once per session
-if "theme_mode" not in st.session_state:
-    initial = str(_qp_get("theme", "light")).lower()
-    st.session_state["theme_mode"] = "dark" if initial in ("dark", "d") else "light"
-
-# -------------------------
-# Theme CSS
-# -------------------------
-
-def apply_theme(mode: str, safe: bool = True):
-    # Core selectors (kept brace-free for f-strings)
-    INPUTS = (
-        ".stTextInput input, .stNumberInput input, .stDateInput input, .stTimeInput input, "
-        ".stTextArea textarea, .stSelectbox div[role='button'], .stMultiSelect div[role='button']"
-    )
-    MENUS = "[role='dialog'], [role='listbox']"
-    LABELS = (
-        "label, .stCheckbox label, .stRadio label, .stSlider label, "
-        ".stSelectbox label, .stMultiSelect label, .stNumberInput label, "
-        ".stTextInput label, .stDateInput label, .stTimeInput label"
-    )
-    GRID = "div[role='grid'], table"
-
-    base_surfaces_safe = """
-      html, body { background:var(--bg); color:var(--text); }
-      header, footer { background:var(--bg); }
-      section, aside { background:transparent; }
-    """
-
-    # NOTE: We deliberately avoid private [data-testid] selectors in production CSS.
-    # Keeping an "enhanced" variant here for local experiments only.
-    base_surfaces_enhanced = """
-      [data-testid="stAppViewContainer"] { background:var(--bg); color:var(--text); }
-      [data-testid="stHeader"], [data-testid="stToolbar"] { background:var(--bg) !important; border-bottom:1px solid var(--line); }
-      [data-testid="stSidebar"] { background:var(--bg2); }
-    """
-
-    CSS_LIGHT = f"""
-    <style>
-    :root {{ --bg:#FFFFFF; --bg2:#F6F8FB; --text:#0F172A; --muted:#475569; --line:#CBD5E1; --primary:#2563EB; --shadow:0 2px 12px rgba(15,23,42,.06); }}
-
-    /* Surfaces */
-    {base_surfaces_safe if safe else base_surfaces_enhanced}
-    .stExpander {{ border-radius:16px; box-shadow:var(--shadow); }}
-
-    /* Text & links */
-    {LABELS} {{ color:var(--text) !important; }}
-    a {{ color:var(--primary) !important; }}
-
-    /* Inputs */
-    {INPUTS} {{
-      background:var(--bg2) !important;
-      color:var(--text) !important;
-      border:1px solid var(--line) !important;
-      border-radius:10px !important;
-    }}
-    .stTextInput input::placeholder, .stTextArea textarea::placeholder {{ color:var(--muted) !important; opacity:0.9; }}
-
-    /* Menus (generic roles instead of test-ids) */
-    {MENUS} {{
-      background:var(--bg2) !important;
-      color:var(--text) !important;
-      border:1px solid var(--line) !important;
-      box-shadow:var(--shadow) !important;
-    }}
-    {MENUS} * {{ color:var(--text) !important; }}
-
-    /* Tables, sliders, metrics, progress */
-    {GRID} {{ background:var(--bg2) !important; color:var(--text) !important; }}
-    [data-baseweb="slider"] div[role="slider"] {{ background:var(--primary) !important; }}
-    </style>
-    """
-
-    CSS_DARK = f"""
-    <style>
-    :root {{ --bg:#0B1220; --bg2:#111827; --text:#E5E7EB; --muted:#94A3B8; --line:#1F2937; --primary:#60A5FA; --shadow:0 2px 14px rgba(0,0,0,.45); }}
-
-    {base_surfaces_safe if safe else base_surfaces_enhanced}
-    .stExpander {{ border-radius:16px; box-shadow:var(--shadow); }}
-
-    {LABELS} {{ color:var(--text) !important; }}
-    a {{ color:var(--primary) !important; }}
-
-    {INPUTS} {{
-      background:var(--bg2) !important;
-      color:var(--text) !important;
-      border:1px solid var(--line) !important;
-      border-radius:10px !important;
-    }}
-    .stTextInput input::placeholder, .stTextArea textarea::placeholder {{ color:var(--muted) !important; opacity:0.9; }}
-
-    {MENUS} {{
-      background:var(--bg2) !important;
-      color:var(--text) !important;
-      border:1px solid var(--line) !important;
-      box-shadow:var(--shadow) !important;
-    }}
-    {MENUS} * {{ color:var(--text) !important; }}
-
-    {GRID} {{ background:#0F172A !important; color:var(--text) !important; }}
-    [data-baseweb="slider"] div[role="slider"] {{ background:var(--primary) !important; }}
-    </style>
-    """
-    st.markdown(CSS_DARK if mode == "dark" else CSS_LIGHT, unsafe_allow_html=True)
+        return False
 
 
-# Apply theme on load (safe selectors)
-apply_theme(st.session_state["theme_mode"], safe=True)
-
-
-# -------------------------
-# Optional: brand/logo (theme-aware, safe fallback)
-# -------------------------
-
-def _safe_logo():
-    mode = st.session_state.get("theme_mode", "light")
-    brand_src = (
-        "assets/brand_dark.png"
-        if mode == "dark" and os.path.exists("assets/brand_dark.png")
-        else "assets/brand.png"
-    )
-    icon_src = "assets/calendar_icon.png"
-
-    # Prefer st.logo when available; fall back gracefully
-    if hasattr(st, "logo"):
-        try:
-            st.logo(Image.open(brand_src), icon_image=Image.open(icon_src))
-            return
-        except Exception:
-            pass
-    st.markdown("### 🗓️ Shift Planner Pro")
-
-
-_safe_logo()
-
-# -------------------------
-# Extra UI polish (neutral; doesn’t fight theme colors)
-# -------------------------
-# Avoid private test-id selectors entirely here.
-st.markdown(
-    """
-<style>
-h1,h2,h3 { letter-spacing:-0.01em; }
-.block-container { padding-top: 1.25rem; padding-bottom: 2.5rem; }
-.stExpander { border-radius: 16px; box-shadow: 0 2px 12px rgba(15,23,42,.06); }
-input, select, textarea { border-radius: 10px !important; }
-:focus-visible { outline: 2px solid #2563EB33; outline-offset: 2px; }
-button[kind="primary"] { border-radius: 12px !important; font-weight: 600; transition: transform .06s ease, box-shadow .12s ease; }
-button[kind="primary"]:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(37,99,235,.18); }
-/* keep the table sizing but avoid test-id where feasible */
-table { font-size: 0.92rem; }
-</style>
-""",
-    unsafe_allow_html=True,
-)
-
-# -------------------------
-# App imports
-# -------------------------
-# Changed to absolute imports so `python main.py` works without packaging.
-from db import init_db, get_all_companies, create_company  # CHANGED
-from ui_pages import page_select_company, page_business, page_employees, page_schedule  # CHANGED
-
-AUTH_ENABLED = os.getenv("AUTH_ENABLED", "true").strip().lower() in ("1", "true", "yes")
-st.set_option("client.showErrorDetails", True)
-
-import traceback
-
-DEV_AUTH_FALLBACK = os.getenv("DEV_AUTH_FALLBACK", "false").strip().lower() in ("1", "true", "yes")
-
-# -------------------------
-# Auth gate (streamlit-authenticator, dev-friendly but not silent)
-# -------------------------
-
-def _auth_gate():
-    """Gate the app with optional authentication, enforced in production.
-
-    In development, we *do not* silently swallow configuration errors. To allow
-    the legacy "continue without auth" behavior, set DEV_AUTH_FALLBACK=true.
-    """
-    if not AUTH_ENABLED:
-        with st.sidebar:
-            st.info("🔓 Authentication disabled.")
-        return
-
-    app_env = os.getenv("APP_ENV", "dev").lower()  # dev|prod  # dev|prod
-    cfg_path = r"C:\Users\akiri\OneDrive\Documents\GitHub\Vardiologio_1\.streamlit\auth.yaml"
-
-
-    authenticator = None
+@lru_cache(maxsize=1)
+def _load_image_safe(path: str) -> Optional[Image.Image]:
+    if not path:
+        return None
+    p = Path(path)
+    if not p.exists():
+        return None
     try:
-        import streamlit_authenticator as stauth
-        with open(cfg_path, "r", encoding="utf-8") as f:
-            auth_cfg = yaml.safe_load(f)
-        authenticator = stauth.Authenticate(
-            auth_cfg["credentials"],
-            auth_cfg["cookie"]["name"],
-            auth_cfg["cookie"]["key"],
-            auth_cfg["cookie"]["expiry_days"],
-        )
-    except FileNotFoundError:
-        msg = (
-            f"❌ Authentication config missing. Expected: {os.path.abspath(cfg_path)}\n"
-            f"Create it with **hashed** passwords."
-        )
-        if app_env == "prod":
-            st.error(msg)
-            st.stop()
-        if not DEV_AUTH_FALLBACK:
-            st.error(msg + "\nTo bypass in dev, set DEV_AUTH_FALLBACK=true.")
-            st.stop()
-        # else: allowed to proceed without auth in dev
+        return Image.open(p)
+    except Exception:
+        return None
+
+
+def _set_page_config_once():
+    """Set page config once per process. Streamlit ignores subsequent calls, but we guard anyway."""
+    if not _has_streamlit_ctx():
+        return
+    if st.session_state.get("_page_config_set"):
+        return
+    st.set_page_config(
+        page_title=SETTINGS.page_title,
+        page_icon=SETTINGS.page_icon,
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
+    st.session_state["_page_config_set"] = True
+
+
+def _apply_theme(dark: bool):
+    """Apply a minimal light/dark theme via CSS variables. Keep it tiny to avoid flicker."""
+    # Avoid re-injecting identical CSS repeatedly
+    key = f"theme_css_{'dark' if dark else 'light'}"
+    if st.session_state.get("_theme_key") == key:
+        return
+    st.session_state["_theme_key"] = key
+
+    css = """
+    <style>
+      :root {
+        --bg: %s;
+        --fg: %s;
+        --card: %s;
+        --muted: %s;
+        --accent: %s;
+      }
+      .stApp { background: var(--bg); color: var(--fg); }
+      .stMarkdown, .stText, .stDataFrame { color: var(--fg); }
+      .st-emotion-cache-1r6slb0 { background: var(--card); } /* cards */
+      .st-emotion-cache-1jicfl2, .st-emotion-cache-16txtl3 { color: var(--fg); }
+      header[data-testid="stHeader"] { background: transparent; }
+    </style>
+    """ % (
+        ("#0f172a", "#e5e7eb", "#111827", "#334155", "#22c55e")
+        if dark
+        else ("#ffffff", "#111827", "#f8fafc", "#cbd5e1", "#0ea5e9")
+    )
+    st.markdown(css, unsafe_allow_html=True)
+
+
+def _toggle_dark_mode_ui():
+    """Render a dark mode toggle that avoids double reruns & preserves URL query param."""
+    # Query param sync
+    qp = st.query_params
+    qp_dark = qp.get("dark", str(SETTINGS.default_dark)).lower() in {"1", "true", "yes"}
+
+    if "_dark" not in st.session_state:
+        st.session_state["_dark"] = qp_dark
+        st.session_state["_dark_applied_once"] = False  # flicker guard
+
+    # Show the toggle
+    new_val = st.sidebar.toggle("🌗 Σκούρο θέμα", value=st.session_state["_dark"])
+
+    # If the user changed it, sync URL param and re-run once
+    if new_val != st.session_state["_dark"]:
+        st.session_state["_dark"] = new_val
+        st.query_params["dark"] = "1" if new_val else "0"
+        # Flicker guard: only rerun when param wasn't already in desired state
+        if not st.session_state.get("_dark_applied_once"):
+            st.session_state["_dark_applied_once"] = True
+            st.rerun()
+
+    _apply_theme(st.session_state["_dark"])
+
+
+def _maybe_auth() -> bool:
+    """Very simple pluggable auth gate. Return True if signed in/allowed, else False.
+    Implement your real auth here. In dev, allow bypass if configured.
+    """
+    if not SETTINGS.auth_enabled:
+        if SETTINGS.app_env != "prod":
+            return True  # no auth in dev unless explicitly enabled
+        # In prod with auth disabled, still allow (or you can choose to block)
+        return True
+
+    # Example stub: look for a cookie/param or fallback to dev bypass
+    user = st.experimental_user or None  # type: ignore[attr-defined]
+    if user:
+        return True
+
+    if SETTINGS.dev_auth_fallback and SETTINGS.app_env != "prod":
+        st.info("🔓 Dev auth bypass active. Set AUTH_ENABLED=0 to skip this gate entirely.")
+        return True
+
+    st.error("🔒 Απαιτείται σύνδεση για πρόσβαση.")
+    return False
+
+
+def _seed_defaults_if_needed():
+    """Idempotent DB init + seed default company if empty, if db.py exists with expected funcs."""
+    try:
+        import db  # type: ignore
+    except Exception:
+        return
+    try:
+        if hasattr(db, "init_db"):
+            db.init_db()
+        # Seed a default company if table exists and is empty
+        if hasattr(db, "get_companies") and hasattr(db, "create_company"):
+            companies = db.get_companies()
+            if not companies:
+                db.create_company({"name": "Default Company"})
     except Exception as e:
-        if app_env == "prod":
-            st.error(f"❌ Failed to initialize authentication: {e}")
-            st.stop()
-        if not DEV_AUTH_FALLBACK:
-            st.exception(e)
-            st.stop()
+        if SETTINGS.show_errors:
+            st.warning(f"DB init/seed skipped due to error: {e}")
+
+
+def _lazy_import_pages():
+    """Try import page modules; return callables or no-op placeholders."""
+    def null_page():
+        st.write("⚠️ Η σελίδα δεν είναι διαθέσιμη σε αυτό το build.")
+
+    def imp(fn_name: str) -> Callable[[], None]:
+        parts = fn_name.split(":")
+        if len(parts) == 2:
+            mod, func = parts
         else:
-            st.warning(f"Auth init failed in dev, continuing without auth: {e}")
-
-    # Dev/override fallback when no authenticator was created
-    if authenticator is None:
-        with st.sidebar:
-            st.info("Auth disabled (dev mode). Provide .streamlit/auth.yaml to enable login.")
-        return
-
-    # ---- Render login (new API first; fallback to old) ----
-    name = username = None
-    auth_status = None
-    try:
-        # New API (>=0.4.x): returns None; results in session_state
-        authenticator.login(location="main", key="Login")
-        auth_status = st.session_state.get("authentication_status")
-        name = st.session_state.get("name")
-        username = st.session_state.get("username")
-    except TypeError:
-        # Old API (<=0.3.x): returns a tuple
-        name, auth_status, username = authenticator.login("Login", "main")
-
-    # Common handling
-    if auth_status is not True:
-        if auth_status is False:
-            st.error("Λάθος username / password.")
-        else:
-            st.warning("Παρακαλώ εισάγετε username και password.")
-        st.stop()
-
-    with st.sidebar:
-        st.caption(f"👤 {name or username}")
+            mod, func = fn_name, "main"
         try:
-            authenticator.logout(location="sidebar")  # new API
-        except TypeError:
-            authenticator.logout("Logout", "sidebar")  # old API
+            module = __import__(mod, fromlist=[func])
+            return getattr(module, func)
+        except Exception:
+            return null_page
+
+    return {
+        "🏢 Επιχείρηση": imp("page_business:page_business"),
+        "👥 Υπάλληλοι": imp("ui_pages:page_employees"),
+        "📅 Πρόγραμμα": imp("ui_pages:page_schedule"),
+        "🤖 Chatbot": imp("ui_pages:page_chatbot"),
+    }
 
 
-# -------------------------
-# Sidebar helpers
-# -------------------------
+def _sidebar_branding():
+    st.sidebar.markdown("### " + SETTINGS.page_title)
+    logo = _load_image_safe(SETTINGS.sidebar_logo_path)
+    if logo:
+        st.sidebar.image(logo, use_column_width=True)
 
-def _progress_value() -> int:
-    company_ready = 1 if st.session_state.get("company", {}).get("name") else 0
-    employees_ready = 1 if len(st.session_state.get("employees", [])) > 0 else 0
-    sched = st.session_state.get("schedule", None)
-    try:
-        if sched is None:
-            schedule_ready = 0
-        else:
-            schedule_ready = 1 if hasattr(sched, "empty") and not sched.empty else 0
-    except Exception:
-        schedule_ready = 0
-    return int(company_ready * 33 + employees_ready * 33 + schedule_ready * 34)
-
-
-def _sidebar_status():
-    env = os.getenv("APP_ENV", "dev")
-    db_file = os.getenv("DB_FILE", "shifts.db")
-    session_ttl = os.getenv("SESSION_TTL_MIN", "240")
-    st.divider()
-    st.markdown("### Session & Environment")
-    st.caption(f"🌐 Env: **{env}** · ⏱ Session: **{session_ttl}′** · 🗄 DB: **{db_file}**")
-    st.caption("Data integrity: **ON** · Safe actions with **Undo**")
-
-# -------------------------
-# Main
-# -------------------------
-
-def _run_page(fn):
-    try:
-        fn()
-    except Exception:
-        st.error(f"❌ Error in {getattr(fn, '__name__', 'page')}")
-        st.code(traceback.format_exc())
 
 def main():
-    if AUTH_ENABLED:
-        _auth_gate()
+    _set_page_config_once()
 
-    # Init DB exactly once per run
-    init_db()
-
-    # Ensure at least one company exists
-    if not get_all_companies():
-        create_company("Default Business")
-
-    # Sidebar: appearance + nav + status
-    with st.sidebar:
-        # Appearance
-        st.markdown("### Appearance")
-        dark_on = st.toggle(
-            "Dark mode",
-            value=(st.session_state.get("theme_mode", "light") == "dark"),
-            key="theme_toggle_main_v4",
-        )
-        new_mode = "dark" if dark_on else "light"
-        if new_mode != st.session_state["theme_mode"]:
-            st.session_state["theme_mode"] = new_mode
-            # robust param update (works across Streamlit versions)
-            try:
-                st.query_params.update({"theme": new_mode})
-            except Exception:
-                pass
-            try:
-                st.rerun()
-            except Exception:
-                pass
-
-        # Persist in URL (mapping syntax)
-        try:
-            current_theme = st.query_params.get("theme")
-            current_theme = current_theme[0] if isinstance(current_theme, list) else current_theme
-        except Exception:
-            current_theme = None
-
-        if current_theme != st.session_state["theme_mode"]:
-            try:
-                st.query_params.update({"theme": st.session_state["theme_mode"]})
-            except Exception:
-                pass
-
-        # Re-apply after toggle (also happens on rerun)
-        apply_theme(st.session_state["theme_mode"])
-
-        # Navigation
-        st.markdown("### Navigation")
-        default_idx = 3 if not st.session_state.get("company", {}).get("name") else 0
-        page = st.radio(
-            "Go to",
-            options=["🏢 Επιχείρηση", "👥 Υπάλληλοι", "📅 Πρόγραμμα", "🔍 Επιλογή"],
-            index=default_idx,
-            key="nav_radio",
-        )
-
-        # Progress + status
-        st.progress(_progress_value(), text="Setup progress")
-        _sidebar_status()
-
-    # Routing
-    if page == "🔍 Επιλογή" or not st.session_state.get("company", {}).get("name"):
-        page_select_company()
+    if not _maybe_auth():
         return
 
-    if page == "🏢 Επιχείρηση":
-         _run_page(page_business)
-    elif page == "👥 Υπάλληλοι":
-         _run_page(page_employees)
-    elif page == "📅 Πρόγραμμα":
-         _run_page(page_schedule)
+    _sidebar_branding()
+    _toggle_dark_mode_ui()
 
+    _seed_defaults_if_needed()
+
+    pages = _lazy_import_pages()
+
+    # Sidebar navigation
+    page_key = "nav_page"
+    choice = st.sidebar.radio("Μενού", list(pages.keys()), index=0, key=page_key)
+
+    # Optional top logo
+    top_logo = _load_image_safe(SETTINGS.top_logo_path)
+    if top_logo:
+        st.image(top_logo, width=180)
+
+    # Render the selected page
+    page_fn = pages.get(choice)
+    if page_fn:
+        page_fn()
+    else:
+        st.write("Δεν βρέθηκε η σελίδα.")
 
 if __name__ == "__main__":
-    main()
+    if not _has_streamlit_ctx():
+        print("This app is intended to be run with:  streamlit run main.py")
+    else:
+        main()
