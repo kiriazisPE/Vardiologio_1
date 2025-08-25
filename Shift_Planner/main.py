@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
+import os
+import yaml
 import pandas as pd
-import os, yaml, streamlit as st
+import streamlit as st
 from PIL import Image
-# main.py (top of file)
-from dotenv import load_dotenv; load_dotenv()  # load .env early
+from dotenv import load_dotenv
 
+# Load .env early
+load_dotenv()
 
 # -------------------------
 # Page config (must run first)
@@ -14,6 +17,7 @@ st.set_page_config(page_title="Shift Planner Pro", page_icon="🗓️", layout="
 # -------------------------
 # URL helpers (no experimental APIs)
 # -------------------------
+
 def _qp_get(key: str, default: str):
     val = st.query_params.get(key, default)
     if isinstance(val, list):
@@ -28,47 +32,57 @@ if "theme_mode" not in st.session_state:
 # -------------------------
 # Theme CSS
 # -------------------------
-def apply_theme(mode: str):
+
+def apply_theme(mode: str, safe: bool = True):
     # Core selectors (kept brace-free for f-strings)
     INPUTS = (
         ".stTextInput input, .stNumberInput input, .stDateInput input, .stTimeInput input, "
         ".stTextArea textarea, .stSelectbox div[role='button'], .stMultiSelect div[role='button']"
     )
-    MENUS = "div[data-baseweb='popover'], div[data-baseweb='menu']"  # select/multiselect portals
+    MENUS = "[role='dialog'], [role='listbox']"
     LABELS = (
-        "[data-testid='stWidgetLabel'] label, label, "
-        "[data-testid='stMarkdownContainer'] p, [data-testid='stCaption'], small, "
-        ".stCheckbox label, .stRadio label, .stSlider label, "
-        ".stSelectbox label, .stMultiSelect label, .stNumberInput label, .stTextInput label, "
-        ".stDateInput label, .stTimeInput label"
+        "label, .stCheckbox label, .stRadio label, .stSlider label, "
+        ".stSelectbox label, .stMultiSelect label, .stNumberInput label, "
+        ".stTextInput label, .stDateInput label, .stTimeInput label"
     )
-    GRID = "[data-testid='stDataFrame'] div[role='grid']"
+    GRID = "div[role='grid'], table"
+
+    base_surfaces_safe = """
+      html, body { background:var(--bg); color:var(--text); }
+      header, footer { background:var(--bg); }
+      section, aside { background:transparent; }
+    """
+
+    # NOTE: We deliberately avoid private [data-testid] selectors in production CSS.
+    # Keeping an "enhanced" variant here for local experiments only.
+    base_surfaces_enhanced = """
+      [data-testid="stAppViewContainer"] { background:var(--bg); color:var(--text); }
+      [data-testid="stHeader"], [data-testid="stToolbar"] { background:var(--bg) !important; border-bottom:1px solid var(--line); }
+      [data-testid="stSidebar"] { background:var(--bg2); }
+    """
 
     CSS_LIGHT = f"""
     <style>
     :root {{ --bg:#FFFFFF; --bg2:#F6F8FB; --text:#0F172A; --muted:#475569; --line:#CBD5E1; --primary:#2563EB; --shadow:0 2px 12px rgba(15,23,42,.06); }}
 
     /* Surfaces */
-    html, body, [data-testid="stAppViewContainer"] {{ background:var(--bg); color:var(--text); }}
-    [data-testid="stHeader"], [data-testid="stToolbar"] {{ background:var(--bg) !important; border-bottom:1px solid var(--line); }}
-    [data-testid="stSidebar"] {{ background:var(--bg2); }}
-    .stExpander, div:has(> .st-subheader) {{ border-radius:16px; box-shadow:var(--shadow); }}
+    {base_surfaces_safe if safe else base_surfaces_enhanced}
+    .stExpander {{ border-radius:16px; box-shadow:var(--shadow); }}
 
-    /* Universal text color for common containers */
+    /* Text & links */
     {LABELS} {{ color:var(--text) !important; }}
     a {{ color:var(--primary) !important; }}
 
-    /* Inputs & their placeholders */
+    /* Inputs */
     {INPUTS} {{
       background:var(--bg2) !important;
       color:var(--text) !important;
       border:1px solid var(--line) !important;
       border-radius:10px !important;
     }}
-    .stTextInput input::placeholder,
-    .stTextArea textarea::placeholder {{ color:var(--muted) !important; opacity:0.9; }}
+    .stTextInput input::placeholder, .stTextArea textarea::placeholder {{ color:var(--muted) !important; opacity:0.9; }}
 
-    /* Dropdown menus (portals) */
+    /* Menus (generic roles instead of test-ids) */
     {MENUS} {{
       background:var(--bg2) !important;
       color:var(--text) !important;
@@ -79,13 +93,7 @@ def apply_theme(mode: str):
 
     /* Tables, sliders, metrics, progress */
     {GRID} {{ background:var(--bg2) !important; color:var(--text) !important; }}
-    [data-testid="stMetricValue"] {{ border-radius:10px; padding:2px 8px; background:var(--bg2); color:var(--text) !important; }}
     [data-baseweb="slider"] div[role="slider"] {{ background:var(--primary) !important; }}
-    [data-testid="stProgressBar"] > div > div {{ background: var(--primary) !important; }}
-
-    /* Buttons */
-    button[kind="primary"] {{ background:var(--primary) !important; color:#fff !important; border-radius:12px !important; font-weight:600; transition:transform .06s, box-shadow .12s; }}
-    button[kind="primary"]:hover {{ transform:translateY(-1px); box-shadow:0 6px 18px rgba(37,99,235,.18); }}
     </style>
     """
 
@@ -93,10 +101,8 @@ def apply_theme(mode: str):
     <style>
     :root {{ --bg:#0B1220; --bg2:#111827; --text:#E5E7EB; --muted:#94A3B8; --line:#1F2937; --primary:#60A5FA; --shadow:0 2px 14px rgba(0,0,0,.45); }}
 
-    html, body, [data-testid="stAppViewContainer"] {{ background:var(--bg); color:var(--text); }}
-    [data-testid="stHeader"], [data-testid="stToolbar"] {{ background:var(--bg) !important; border-bottom:1px solid var(--line); }}
-    [data-testid="stSidebar"] {{ background:var(--bg2); }}
-    .stExpander, div:has(> .st-subheader) {{ border-radius:16px; box-shadow:var(--shadow); }}
+    {base_surfaces_safe if safe else base_surfaces_enhanced}
+    .stExpander {{ border-radius:16px; box-shadow:var(--shadow); }}
 
     {LABELS} {{ color:var(--text) !important; }}
     a {{ color:var(--primary) !important; }}
@@ -107,8 +113,7 @@ def apply_theme(mode: str):
       border:1px solid var(--line) !important;
       border-radius:10px !important;
     }}
-    .stTextInput input::placeholder,
-    .stTextArea textarea::placeholder {{ color:var(--muted) !important; opacity:0.9; }}
+    .stTextInput input::placeholder, .stTextArea textarea::placeholder {{ color:var(--muted) !important; opacity:0.9; }}
 
     {MENUS} {{
       background:var(--bg2) !important;
@@ -119,77 +124,95 @@ def apply_theme(mode: str):
     {MENUS} * {{ color:var(--text) !important; }}
 
     {GRID} {{ background:#0F172A !important; color:var(--text) !important; }}
-    [data-testid="stMetricValue"] {{ border-radius:10px; padding:2px 8px; background:#0F172A; color:var(--text) !important; }}
     [data-baseweb="slider"] div[role="slider"] {{ background:var(--primary) !important; }}
-    [data-testid="stProgressBar"] > div > div {{ background: var(--primary) !important; }}
-
-    button[kind="primary"] {{ background:var(--primary) !important; color:#0B1220 !important; border-radius:12px !important; font-weight:600; transition:transform .06s, box-shadow .12s; }}
-    button[kind="primary"]:hover {{ transform:translateY(-1px); box-shadow:0 6px 18px rgba(96,165,250,.25); }}
     </style>
     """
     st.markdown(CSS_DARK if mode == "dark" else CSS_LIGHT, unsafe_allow_html=True)
 
 
-
-# Apply theme on load
-apply_theme(st.session_state["theme_mode"])
+# Apply theme on load (safe selectors)
+apply_theme(st.session_state["theme_mode"], safe=True)
 
 
 # -------------------------
 # Optional: brand/logo (theme-aware, safe fallback)
 # -------------------------
+
 def _safe_logo():
-    try:
-        mode = st.session_state.get("theme_mode", "light")
-        brand_src = "assets/brand_dark.png" if mode == "dark" and os.path.exists("assets/brand_dark.png") else "assets/brand.png"
-        icon_src  = "assets/calendar_icon.png"
-        st.logo(Image.open(brand_src), icon_image=Image.open(icon_src))
-    except Exception:
-        st.markdown("### 🗓️ Shift Planner Pro")
+    mode = st.session_state.get("theme_mode", "light")
+    brand_src = (
+        "assets/brand_dark.png"
+        if mode == "dark" and os.path.exists("assets/brand_dark.png")
+        else "assets/brand.png"
+    )
+    icon_src = "assets/calendar_icon.png"
+
+    # Prefer st.logo when available; fall back gracefully
+    if hasattr(st, "logo"):
+        try:
+            st.logo(Image.open(brand_src), icon_image=Image.open(icon_src))
+            return
+        except Exception:
+            pass
+    st.markdown("### 🗓️ Shift Planner Pro")
+
 
 _safe_logo()
 
 # -------------------------
 # Extra UI polish (neutral; doesn’t fight theme colors)
 # -------------------------
-st.markdown("""
+# Avoid private test-id selectors entirely here.
+st.markdown(
+    """
 <style>
 h1,h2,h3 { letter-spacing:-0.01em; }
 .block-container { padding-top: 1.25rem; padding-bottom: 2.5rem; }
-.stExpander, div:has(> .st-subheader) { border-radius: 16px; box-shadow: 0 2px 12px rgba(15,23,42,.06); }
+.stExpander { border-radius: 16px; box-shadow: 0 2px 12px rgba(15,23,42,.06); }
 input, select, textarea { border-radius: 10px !important; }
 :focus-visible { outline: 2px solid #2563EB33; outline-offset: 2px; }
 button[kind="primary"] { border-radius: 12px !important; font-weight: 600; transition: transform .06s ease, box-shadow .12s ease; }
 button[kind="primary"]:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(37,99,235,.18); }
-[data-testid="stDataFrame"] table { font-size: 0.92rem; }
-[data-testid="stSidebar"] .stRadio > label { font-weight: 600; }
-[data-testid="stMetricValue"] { border-radius: 10px; padding: 2px 8px; }
+/* keep the table sizing but avoid test-id where feasible */
+table { font-size: 0.92rem; }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 # -------------------------
 # App imports
 # -------------------------
-from db import init_db, get_all_companies, create_company
-from ui_pages import (
-    page_select_company,
-    page_business,
-    page_employees,
-    page_schedule,
-)
+from .db import init_db, get_all_companies, create_company
+# FIX: use absolute import so running `python main.py` works
+from .ui_pages import page_select_company, page_business, page_employees, page_schedule
 
-AUTH_ENABLED = True
+
+AUTH_ENABLED = os.getenv("AUTH_ENABLED", "true").strip().lower() in ("1", "true", "yes")
+st.set_option("client.showErrorDetails", True)
+
+import traceback
+
+DEV_AUTH_FALLBACK = os.getenv("DEV_AUTH_FALLBACK", "false").strip().lower() in ("1", "true", "yes")
 
 # -------------------------
-# Auth gate (streamlit-authenticator, dev-friendly fallback)
+# Auth gate (streamlit-authenticator, dev-friendly but not silent)
 # -------------------------
 
 def _auth_gate():
-    """Gate the app with optional authentication, enforced in production."""
-    app_env = os.getenv("APP_ENV", "dev").lower()  # dev|prod  (from your constants) 
+    """Gate the app with optional authentication, enforced in production.
+
+    In development, we *do not* silently swallow configuration errors. To allow
+    the legacy "continue without auth" behavior, set DEV_AUTH_FALLBACK=true.
+    """
+    if not AUTH_ENABLED:
+        with st.sidebar:
+            st.info("🔓 Authentication disabled.")
+        return
+
+    app_env = os.getenv("APP_ENV", "dev").lower()  # dev|prod  # dev|prod
     cfg_path = ".streamlit/auth.yaml"
 
-    # Try to construct the authenticator
     authenticator = None
     try:
         import streamlit_authenticator as stauth
@@ -202,19 +225,28 @@ def _auth_gate():
             auth_cfg["cookie"]["expiry_days"],
         )
     except FileNotFoundError:
+        msg = (
+            f"❌ Authentication config missing. Expected: {os.path.abspath(cfg_path)}\n"
+            f"Create it with **hashed** passwords."
+        )
         if app_env == "prod":
-            st.error(
-                f"❌ Authentication config missing.\n"
-                f"Expected file: `{os.path.abspath(cfg_path)}`\n"
-                f"Create it with **hashed** passwords."
-            )
+            st.error(msg)
             st.stop()
+        if not DEV_AUTH_FALLBACK:
+            st.error(msg + "\nTo bypass in dev, set DEV_AUTH_FALLBACK=true.")
+            st.stop()
+        # else: allowed to proceed without auth in dev
     except Exception as e:
         if app_env == "prod":
             st.error(f"❌ Failed to initialize authentication: {e}")
             st.stop()
+        if not DEV_AUTH_FALLBACK:
+            st.exception(e)
+            st.stop()
+        else:
+            st.warning(f"Auth init failed in dev, continuing without auth: {e}")
 
-    # Dev fallback when no authenticator was created
+    # Dev/override fallback when no authenticator was created
     if authenticator is None:
         with st.sidebar:
             st.info("Auth disabled (dev mode). Provide .streamlit/auth.yaml to enable login.")
@@ -252,6 +284,7 @@ def _auth_gate():
 # -------------------------
 # Sidebar helpers
 # -------------------------
+
 def _progress_value() -> int:
     company_ready = 1 if st.session_state.get("company", {}).get("name") else 0
     employees_ready = 1 if len(st.session_state.get("employees", [])) > 0 else 0
@@ -261,6 +294,7 @@ def _progress_value() -> int:
     except Exception:
         schedule_ready = 0
     return int(company_ready * 33 + employees_ready * 33 + schedule_ready * 34)
+
 
 def _sidebar_status():
     env = os.getenv("APP_ENV", "dev")
@@ -274,8 +308,19 @@ def _sidebar_status():
 # -------------------------
 # Main
 # -------------------------
+
+def _run_page(fn):
+    try:
+        fn()
+    except Exception:
+        st.error(f"❌ Error in {getattr(fn, '__name__', 'page')}")
+        st.code(traceback.format_exc())
+
 def main():
-    _auth_gate()
+    if AUTH_ENABLED:
+        _auth_gate()
+
+    # Init DB exactly once per run
     init_db()
 
     # Ensure at least one company exists
@@ -294,14 +339,21 @@ def main():
         new_mode = "dark" if dark_on else "light"
         if new_mode != st.session_state["theme_mode"]:
             st.session_state["theme_mode"] = new_mode
-            st.query_params["theme"] = new_mode
+            # robust param update (works across Streamlit versions)
+            try:
+                st.query_params.update({"theme": new_mode})
+            except Exception:
+                pass
             st.rerun()
 
         # Persist in URL (mapping syntax)
         current_theme = st.query_params.get("theme")
         current_theme = current_theme[0] if isinstance(current_theme, list) else current_theme
         if current_theme != st.session_state["theme_mode"]:
-            st.query_params["theme"] = st.session_state["theme_mode"]
+            try:
+                st.query_params.update({"theme": st.session_state["theme_mode"]})
+            except Exception:
+                pass
 
         # Re-apply after toggle (also happens on rerun)
         apply_theme(st.session_state["theme_mode"])
@@ -326,11 +378,12 @@ def main():
         return
 
     if page == "🏢 Επιχείρηση":
-        page_business()
+         _run_page(page_business)
     elif page == "👥 Υπάλληλοι":
-        page_employees()
+         _run_page(page_employees)
     elif page == "📅 Πρόγραμμα":
-        page_schedule()
+         _run_page(page_schedule)
+
 
 if __name__ == "__main__":
     main()
