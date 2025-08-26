@@ -1,16 +1,31 @@
 # -*- coding: utf-8 -*-
+"""
+SQLite data layer for the scheduling app.
+
+Key cleanups & compatibility notes:
+- Deterministic trigger installation: we now check sqlite_master for trigger presence
+  before attempting CREATE TRIGGER (SQLite lacks IF NOT EXISTS for triggers).
+- create_company(...) now accepts either a simple name (str) *or* a dict with
+  fields (name, active_shifts, roles, rules, role_settings, work_model, active),
+  so calls from UI that pass a dict won't fail. Returns newly created company id.
+- Swap API param names are normalized: functions accept both the DB-facing
+  from_employee_id/to_employee_id and the UI-facing requester_id/target_employee_id.
+  This keeps UI introspection happy without breaking existing callers.
+- Robust date normalization via _normalize_iso_date_or_raise for all date inputs.
+"""
 import sqlite3
 import json
 import re
 from datetime import date as _date
 from contextlib import contextmanager
-from typing import Iterable, List, Dict, Optional
+from typing import Iterable, List, Dict, Optional, Union, Tuple
 from constants import DB_FILE
 
 # -----------------------------
 # Utilities (date normalization & checks)
 # -----------------------------
 _ISO_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
+
 
 def _normalize_iso_date_or_raise(s: str) -> str:
     """Return YYYY-MM-DD if valid ISO date; raise ValueError otherwise.
@@ -24,7 +39,6 @@ def _normalize_iso_date_or_raise(s: str) -> str:
         raise ValueError(f"Invalid date format (expected YYYY-MM-DD): {s!r}")
     y, mo, d = map(int, m.groups())
     try:
-        # Validates actual calendar date (handles 2025-02-30 etc.)
         iso = _date(y, mo, d).isoformat()
     except Exception:
         raise ValueError(f"Invalid calendar date: {s!r}")
@@ -57,12 +71,33 @@ def _has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
     return any(r[1] == column for r in _table_info(conn, table))
 
 
+def _trigger_exists(conn: sqlite3.Connection, name: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='trigger' AND name=? LIMIT 1",
+        (name,),
+    ).fetchone()
+    return row is not None
+
+
+def _ensure_trigger(conn: sqlite3.Connection, name: str, sql: str) -> None:
+    """Create trigger if it doesn't exist.
+    NOTE: For existing DBs, an older trigger with the same name but different SQL
+    will be left in place (best-effort presence check). If you radically change
+    trigger logic, consider bumping the trigger *name* to force a reinstall.
+    """
+    if not _trigger_exists(conn, name):
+        conn.execute(sql)
+
+
 def _create_date_validation_triggers(conn: sqlite3.Connection) -> None:
     """Install BEFORE INSERT/UPDATE triggers that enforce strict YYYY-MM-DD dates.
     SQLite cannot ALTER TABLE to add CHECK constraints easily post hoc, so triggers
     provide a robust, idempotent path for existing DBs.
+
+    Presence check is *best-effort*: we key off trigger names and avoid re-creating
+    if present. We do not diff SQL body. If you need to change logic, rename the
+    trigger(s) below.
     """
-    # NOTE: SQLite lacks IF NOT EXISTS for triggers; we wrap in try/except.
     for name, table, column in (
         ("trg_schedule_validate_date_ins", "schedule", "date"),
         ("trg_schedule_validate_date_upd", "schedule", "date"),
@@ -71,7 +106,6 @@ def _create_date_validation_triggers(conn: sqlite3.Connection) -> None:
     ):
         is_update = name.endswith("_upd")
         timing = "BEFORE UPDATE" if is_update else "BEFORE INSERT"
-        # Validate with GLOB shape + date() non-null check; fast and SQLite-native.
         sql = f'''
         CREATE TRIGGER {name}
         {timing} ON {table}
@@ -85,11 +119,7 @@ def _create_date_validation_triggers(conn: sqlite3.Connection) -> None:
             END;
         END;
         '''
-        try:
-            conn.execute(sql)
-        except sqlite3.OperationalError:
-            # Trigger probably exists already
-            pass
+        _ensure_trigger(conn, name, sql)
 
 
 def init_db():
@@ -179,26 +209,20 @@ def init_db():
         # Constraints & Indices for correctness & performance
         # -----------------------------
         # Uniqueness: an employee cannot be double-booked for the same (date, shift) in a company
-        try:
-            conn.execute(
-                """
-                CREATE UNIQUE INDEX IF NOT EXISTS ux_schedule_company_emp_date_shift
-                ON schedule(company_id, employee_id, date, shift)
-                """
-            )
-        except sqlite3.OperationalError:
-            pass
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_schedule_company_emp_date_shift
+            ON schedule(company_id, employee_id, date, shift)
+            """
+        )
 
         # Optional: keep employee names unique per company to avoid ambiguous name→id mapping
-        try:
-            conn.execute(
-                """
-                CREATE UNIQUE INDEX IF NOT EXISTS ux_employees_company_name
-                ON employees(company_id, name)
-                """
-            )
-        except sqlite3.OperationalError:
-            pass
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_employees_company_name
+            ON employees(company_id, name)
+            """
+        )
 
         # Range-query performance for schedule views
         conn.execute(
@@ -254,20 +278,62 @@ def get_company(company_id: int) -> Optional[Dict]:
         }
 
 
-def create_company(name: str) -> None:
+def create_company(data_or_name: Union[str, Dict]) -> int:
+    """Create a company.
+
+    Accepts either a plain name (str) or a dict with any of:
+      - name (required)
+      - active_shifts, roles, rules, role_settings (JSON-serializable)
+      - work_model (str), active (int/bool)
+
+    Returns the new company id.
+    """
+    if isinstance(data_or_name, str):
+        payload = {
+            "name": data_or_name,
+            "active_shifts": [],
+            "roles": [],
+            "rules": {},
+            "role_settings": {},
+            "work_model": "5ήμερο",
+            "active": 1,
+        }
+    elif isinstance(data_or_name, dict):
+        if not data_or_name.get("name"):
+            raise ValueError("create_company requires 'name'")
+        payload = {
+            "name": data_or_name["name"],
+            "active_shifts": data_or_name.get("active_shifts", []),
+            "roles": data_or_name.get("roles", []),
+            "rules": data_or_name.get("rules", {}),
+            "role_settings": data_or_name.get("role_settings", {}),
+            "work_model": data_or_name.get("work_model", "5ήμερο"),
+            "active": int(data_or_name.get("active", 1)),
+        }
+    else:
+        raise TypeError("create_company expects str or dict")
+
     with get_conn() as conn:
-        conn.execute(
+        cur = conn.execute(
             """
             INSERT INTO companies (name, active_shifts, roles, rules, role_settings, work_model, active)
-            VALUES (?, '[]', '[]', '{}', '{}', '5ήμερο', 1)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (name,),
+            (
+                payload["name"],
+                json.dumps(payload["active_shifts"], ensure_ascii=False),
+                json.dumps(payload["roles"], ensure_ascii=False),
+                json.dumps(payload["rules"], ensure_ascii=False),
+                json.dumps(payload["role_settings"], ensure_ascii=False),
+                payload["work_model"],
+                payload["active"],
+            ),
         )
+        return int(cur.lastrowid)
 
 
 def update_company(company_id: int, data: Dict) -> None:
     with get_conn() as conn:
-        # Make sure "active" persists
         active_val = int(data.get("active", 1))
         conn.execute(
             """
@@ -457,7 +523,6 @@ def _validate_entries_or_raise(conn: sqlite3.Connection, company_id: int, entrie
             int(e["employee_id"])  # type check only
         except Exception:
             raise ValueError(f"Entry #{i} has non-integer employee_id: {e!r}")
-        # validate & normalize date; write back normalized value so later steps are consistent
         e["date"] = _normalize_iso_date_or_raise(e["date"])  # may raise
 
     # Verify all employee ids exist for company
@@ -489,14 +554,13 @@ def bulk_save_week_schedule(company_id: int, start_date: str, end_date: str, ent
     if s0 > e0:
         raise ValueError(f"start_date {s0} is after end_date {e0}")
 
-    # Materialize list and normalize/validate entries
     entries = list(entries)
 
     with get_conn() as conn:
         if entries:
             _validate_entries_or_raise(conn, company_id, entries)
 
-        # Now that dates are normalized, filter by window
+        # Filter by window (dates already normalized)
         entries = [e for e in entries if s0 <= e.get("date", "") <= e0]
 
         # Clear the window once (inclusive range)
@@ -533,22 +597,60 @@ def clear_schedule(company_id: int) -> None:
         conn.execute("DELETE FROM schedule WHERE company_id=?", (company_id,))
 
 # -----------------------------
-# Swap Requests API
+# Swap Requests API (UI/DB name compatibility)
 # -----------------------------
 
-def create_swap_request(company_id: int, from_employee_id: int, to_employee_id: int, date: str, shift: str) -> int:
-    """UI signature: (company_id, from_id, to_id, date, shift). Store a single shift.
-    For backward compatibility we also populate shift_from/shift_to with the same value.
-    Date is validated & normalized.
+def _normalize_swap_ids(
+    *,
+    requester_id: Optional[int] = None,
+    target_employee_id: Optional[int] = None,
+    from_employee_id: Optional[int] = None,
+    to_employee_id: Optional[int] = None,
+) -> Tuple[int, int]:
+    """Return (from_id, to_id) using flexible param names.
+
+    UI uses requester_id / target_employee_id, while DB columns and some callers
+    use from_employee_id / to_employee_id. We normalize here.
+    """
+    _from = from_employee_id if from_employee_id is not None else requester_id
+    _to = to_employee_id if to_employee_id is not None else target_employee_id
+    if _from is None or _to is None:
+        raise ValueError("Both requester/from and target/to employee ids are required")
+    return int(_from), int(_to)
+
+
+def create_swap_request(
+    company_id: int,
+    date: str,
+    shift: str,
+    *,
+    # Accept both naming schemes
+    requester_id: Optional[int] = None,
+    target_employee_id: Optional[int] = None,
+    from_employee_id: Optional[int] = None,
+    to_employee_id: Optional[int] = None,
+) -> int:
+    """Create a swap request for a single (date, shift).
+
+    Accepts UI-style (requester_id, target_employee_id) or DB-style
+    (from_employee_id, to_employee_id). For backward compatibility we also
+    populate shift_from/shift_to with the same value as 'shift'.
     """
     iso_date = _normalize_iso_date_or_raise(date)
+    _from, _to = _normalize_swap_ids(
+        requester_id=requester_id,
+        target_employee_id=target_employee_id,
+        from_employee_id=from_employee_id,
+        to_employee_id=to_employee_id,
+    )
+
     with get_conn() as conn:
         cur = conn.execute(
             """
             INSERT INTO swap_requests (company_id, from_employee_id, to_employee_id, date, shift, shift_from, shift_to, status)
             VALUES (?,?,?,?,?, ?, ?, 'pending')
             """,
-            (company_id, from_employee_id, to_employee_id, iso_date, shift, shift, shift),
+            (company_id, _from, _to, iso_date, shift, shift, shift),
         )
         return int(cur.lastrowid)
 
@@ -586,9 +688,7 @@ def list_swap_requests(company_id: int, status: Optional[str] = None) -> List[Di
 
 
 def update_swap_status(request_id: int, status: str, note: Optional[str] = None) -> None:
-    """
-    Update status (pending|approved|rejected|applied) and optional note.
-    """
+    """Update status (pending|approved|rejected|applied) and optional note."""
     if status not in {"pending", "approved", "rejected", "applied"}:
         raise ValueError("Invalid status")
     with get_conn() as conn:
@@ -598,12 +698,22 @@ def update_swap_status(request_id: int, status: str, note: Optional[str] = None)
         )
 
 
-def apply_approved_swap(company_id: int, date: str, shift: str,
-                        requester_id: int, target_id: int) -> bool:
+def apply_approved_swap(
+    company_id: int,
+    date: str,
+    shift: str,
+    *,
+    # UI-style
+    requester_id: Optional[int] = None,
+    target_employee_id: Optional[int] = None,
+    # DB-style / legacy
+    from_employee_id: Optional[int] = None,
+    to_employee_id: Optional[int] = None,
+) -> bool:
     """
-    UI signature: (company_id, date, shift, requester_id, target_id)
+    Move the (date, shift) assignment from requester to target.
 
-    Behavior: move the (date, shift) assignment from requester to target.
+    Accepts either (requester_id, target_employee_id) or (from_employee_id, to_employee_id).
     If the target already has an assignment for the same (date, shift), we drop the duplicate
     before reassigning. Returns True if a change was applied.
 
@@ -611,11 +721,18 @@ def apply_approved_swap(company_id: int, date: str, shift: str,
     we clear the role to NULL to avoid invalid role bindings silently propagating.
     """
     iso_date = _normalize_iso_date_or_raise(date)
+    _from, _to = _normalize_swap_ids(
+        requester_id=requester_id,
+        target_employee_id=target_employee_id,
+        from_employee_id=from_employee_id,
+        to_employee_id=to_employee_id,
+    )
+
     with get_conn() as conn:
         # Find the requester's existing assignment for that date/shift
         row_req = conn.execute(
             "SELECT id, role FROM schedule WHERE company_id = ? AND employee_id = ? AND date = ? AND shift = ?",
-            (company_id, requester_id, iso_date, shift),
+            (company_id, _from, iso_date, shift),
         ).fetchone()
         if not row_req:
             return False
@@ -623,7 +740,7 @@ def apply_approved_swap(company_id: int, date: str, shift: str,
         # Ensure the target has no duplicate assignment for that slot
         conn.execute(
             "DELETE FROM schedule WHERE company_id = ? AND employee_id = ? AND date = ? AND shift = ?",
-            (company_id, target_id, iso_date, shift),
+            (company_id, _to, iso_date, shift),
         )
 
         # If role exists but target doesn't have it, clear role
@@ -631,7 +748,7 @@ def apply_approved_swap(company_id: int, date: str, shift: str,
         if role_to_apply:
             target_roles_row = conn.execute(
                 "SELECT roles FROM employees WHERE id=?",
-                (target_id,),
+                (_to,),
             ).fetchone()
             target_roles = []
             if target_roles_row and target_roles_row["roles"]:
@@ -645,7 +762,7 @@ def apply_approved_swap(company_id: int, date: str, shift: str,
         # Reassign the schedule row to the target
         conn.execute(
             "UPDATE schedule SET employee_id = ?, role = ? WHERE id = ?",
-            (target_id, role_to_apply, row_req["id"]),
+            (_to, role_to_apply, row_req["id"]),
         )
 
         # Mark matching swap requests as applied (covers shift/shift_from/shift_to)
@@ -660,6 +777,6 @@ def apply_approved_swap(company_id: int, date: str, shift: str,
               AND to_employee_id   = ?
               AND status IN ('pending','approved')
             """,
-            (company_id, iso_date, shift, requester_id, target_id),
+            (company_id, iso_date, shift, _from, _to),
         )
         return True

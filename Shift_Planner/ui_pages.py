@@ -70,12 +70,205 @@ except Exception:  # ultimate fallback
         return pd.DataFrame()
     _auto_fix_schedule = None
 
+
+# -------------------------
+# Auto-fix flexible caller
+# -------------------------
+def _call_auto_fix_schedule(df, emps, company, start_date=None, days_count=None):
+    """Call auto_fix_schedule with flexible signatures and normalize output to (fixed_df, viols)."""
+    def _norm(ret):
+        import pandas as _pd
+        # Normalize return to (df, viols)
+        if isinstance(ret, tuple):
+            if len(ret) >= 2:
+                return ret[0], ret[1]
+            if len(ret) == 1:
+                return ret[0], _pd.DataFrame()
+            return df, _pd.DataFrame()
+        # Single object
+        if isinstance(ret, _pd.DataFrame):
+            return ret, _pd.DataFrame()
+        return df, _pd.DataFrame()
+
+    if _auto_fix_schedule is None:
+        _df_for_validation = df.copy()
+        if "Ώρες" in _df_for_validation.columns:
+            _df_for_validation["Ώρες"] = pd.to_numeric(_df_for_validation["Ώρες"], errors="coerce").fillna(0).astype(float)
+        viols = check_violations(_df_for_validation, rules=company.get("rules", {}), work_model=company.get("work_model", "5ήμερο"))
+        return df, viols
+
+    active_shifts = company.get("active_shifts", [])
+    
+
+    # Προειδοποίηση για βάρδιες χωρίς ορισμένες ώρες
+    try:
+        from constants import SHIFT_TIMES
+    except Exception:
+        SHIFT_TIMES = {}
+    unknown = [s for s in company.get("active_shifts", []) if s not in SHIFT_TIMES]
+    if unknown:
+        st.warning(
+            "Οι παρακάτω βάρδιες δεν έχουν ορισμένες ώρες στο `constants.SHIFT_TIMES` "
+            f"και θα παραλειφθούν από τον αλγόριθμο: {', '.join(unknown)}"
+        )
+    roles = company.get("roles", [])
+    rules = company.get("rules", {})
+    role_settings = company.get("role_settings", {})
+    work_model = company.get("work_model", "5ήμερο")
+
+    if start_date is None:
+        try:
+            start_date = pd.to_datetime(df["Ημερομηνία"]).dt.date.min()
+        except Exception:
+            import datetime as _dt
+            start_date = _dt.date.today()
+
+    if days_count is None:
+        try:
+            days_count = int(pd.to_datetime(df["Ημερομηνία"]).dt.date.nunique())
+            if days_count <= 0:
+                days_count = 7
+        except Exception:
+            days_count = 7
+
+    # Try full signature
+    try:
+        return _norm(_auto_fix_schedule(df, start_date, emps, active_shifts, roles, rules, role_settings, days_count, work_model))
+    except TypeError:
+        pass
+    # Try without days_count
+    try:
+        return _norm(_auto_fix_schedule(df, start_date, emps, active_shifts, roles, rules, role_settings, work_model))
+    except TypeError:
+        pass
+    # Try legacy shapes
+    try:
+        return _norm(_auto_fix_schedule(df, emps, active_shifts, roles, rules, role_settings, days_count, work_model))
+    except TypeError:
+        pass
+    try:
+        return _norm(_auto_fix_schedule(df, emps, active_shifts, roles, rules, role_settings, work_model))
+    except TypeError:
+        pass
+    try:
+        return _norm(_auto_fix_schedule(df, active_shifts, rules))
+    except TypeError:
+        pass
+    try:
+        return _norm(_auto_fix_schedule(df, emps, active_shifts, roles, rules, role_settings))
+    except TypeError:
+        pass
+
+    _df_for_validation = df.copy()
+    if "Ώρες" in _df_for_validation.columns:
+        _df_for_validation["Ώρες"] = pd.to_numeric(_df_for_validation["Ώρες"], errors="coerce").fillna(0).astype(float)
+    viols = check_violations(_df_for_validation, rules=rules, work_model=work_model)
+    return df, viols
+
+    active_shifts = company.get("active_shifts", [])
+    roles = company.get("roles", [])
+    rules = company.get("rules", {})
+    role_settings = company.get("role_settings", {})
+    work_model = company.get("work_model", "5ήμερο")
+
+    # Infer start_date if missing from earliest date in df
+    if start_date is None:
+        try:
+            start_date = pd.to_datetime(df["Ημερομηνία"]).dt.date.min()
+        except Exception:
+            import datetime as _dt
+            start_date = _dt.date.today()
+
+    # Infer days_count from number of unique dates if not provided
+    if days_count is None:
+        try:
+            days_count = int(pd.to_datetime(df["Ημερομηνία"]).dt.date.nunique())
+            if days_count <= 0:
+                days_count = 7
+        except Exception:
+            days_count = 7
+
+    # Try full signature
+    try:
+        return _auto_fix_schedule(df, start_date, emps, active_shifts, roles, rules, role_settings, days_count, work_model)
+    except TypeError:
+        pass
+    # Try without days_count
+    try:
+        return _auto_fix_schedule(df, start_date, emps, active_shifts, roles, rules, role_settings, work_model)
+    except TypeError:
+        pass
+    # Try legacy shapes
+    try:
+        return _auto_fix_schedule(df, emps, active_shifts, roles, rules, role_settings, days_count, work_model)
+    except TypeError:
+        pass
+    try:
+        return _auto_fix_schedule(df, emps, active_shifts, roles, rules, role_settings, work_model)
+    except TypeError:
+        pass
+    try:
+        return _auto_fix_schedule(df, active_shifts, rules)
+    except TypeError:
+        pass
+    try:
+        return _auto_fix_schedule(df, emps, active_shifts, roles, rules, role_settings)
+    except TypeError:
+        pass
+
+    _df_for_validation = df.copy()
+    if "Ώρες" in _df_for_validation.columns:
+        _df_for_validation["Ώρες"] = pd.to_numeric(_df_for_validation["Ώρες"], errors="coerce").fillna(0).astype(float)
+    viols = check_violations(_df_for_validation, rules=rules, work_model=work_model)
+    return df, viols
+
+    active_shifts = company.get("active_shifts", [])
+    roles = company.get("roles", [])
+    rules = company.get("rules", {})
+    role_settings = company.get("role_settings", {})
+    work_model = company.get("work_model", "5ήμερο")
+
+    # Try with days_count if provided
+    try:
+        if days_count is None:
+            # infer from df unique dates
+            try:
+                days_count = int(pd.to_datetime(df["Ημερομηνία"]).dt.date.nunique())
+                if days_count <= 0:
+                    days_count = 7
+            except Exception:
+                days_count = 7
+        return _auto_fix_schedule(df, emps, active_shifts, roles, rules, role_settings, days_count, work_model)
+    except TypeError:
+        pass
+    # Try without days_count
+    try:
+        return _auto_fix_schedule(df, emps, active_shifts, roles, rules, role_settings, work_model)
+    except TypeError:
+        pass
+    # Try legacy minimal signature
+    try:
+        return _auto_fix_schedule(df, active_shifts, rules)
+    except TypeError:
+        pass
+    # Try without work_model & days_count
+    try:
+        return _auto_fix_schedule(df, emps, active_shifts, roles, rules, role_settings)
+    except TypeError:
+        pass
+
+    # Final fallback
+    _df_for_validation = df.copy()
+    if "Ώρες" in _df_for_validation.columns:
+        _df_for_validation["Ώρες"] = pd.to_numeric(_df_for_validation["Ώρες"], errors="coerce").fillna(0).astype(float)
+    viols = check_violations(_df_for_validation, rules, work_model)
+    return df, viols
+
 # ===== Local safe fallback to replace removed DEFAULT_RULES =====
-# (You removed DEFAULT_RULES previously; keep UI resilient)
 DEFAULT_RULES_FALLBACK = {
     "max_daily_hours_5days": 8,
     "max_daily_hours_6days": 9,
-    "max_daily_hours_7days": 9,  # align with engine & constants
+    "max_daily_hours_7days": 9,
     "max_daily_overtime": 3,
     "min_daily_rest": 11,
     "weekly_hours_5days": 40,
@@ -87,40 +280,28 @@ DEFAULT_RULES_FALLBACK = {
 
 # ======================== THEME & GLOBAL STYLE ========================
 def _apply_global_style():
-    """Theme-aware CSS: respects Streamlit theme tokens (no hardcoded colors)."""
     if st.session_state.get("_styled_once"):
         return
     st.markdown(
         """
         <style>
-        /* Tighten vertical rhythm */
         .block-container { padding-top: 1.2rem; padding-bottom: 2.4rem; }
         section[data-testid="stSidebar"] .block-container { padding-top: 0.8rem; }
 
-        /* Cards/expanders polish */
         .stMetric { border-radius: 16px; padding: 0.4rem 0.6rem; }
         div[data-testid="stExpander"] > details { border-radius: 14px; }
         div[data-testid="stExpander"] summary { font-weight: 600; }
 
-        /* Data editor header wrap + denser rows */
         div[data-testid="stDataFrame"] .st-emotion-cache-1yycgf0 { white-space: normal !important; }
         div[data-testid="stDataFrame"] .row_heading { font-weight: 600; }
         div[data-testid="stDataFrame"] .blank { color: var(--text-color); }
 
-        /* Primary buttons a bit rounded */
         .stButton>button, .stDownloadButton>button {
           border-radius: 12px;
           padding: 0.45rem 0.9rem;
           font-weight: 600;
         }
-        /* Soft badge button */
-        .btn-soft>button {
-          background: color-mix(in srgb, var(--primary-color) 16%, transparent);
-          color: var(--primary-color);
-          border: 1px solid color-mix(in srgb, var(--primary-color) 30%, transparent);
-        }
 
-        /* Use theme variables so dark/light works */
         :root, [data-theme="dark"] {
           --kpi-bg: color-mix(in srgb, var(--background-color) 85%, var(--primary-color) 15%);
         }
@@ -132,10 +313,9 @@ def _apply_global_style():
     st.session_state["_styled_once"] = True
 
 # ======================== CACHING HELPERS ========================
-# Cache lightweight reads; callers can still force-refresh with st.rerun().
 if hasattr(st, "cache_data"):
     cache_data = st.cache_data
-else:  # Streamlit < 1.18 fallback
+else:
     def cache_data(func=None, **_):
         return func
 
@@ -154,20 +334,190 @@ def _cached_schedule(company_id: int, start_iso: str, end_iso: str):
     return []
 
 def _refresh_employees(company_id: int):
-    """Clear employee cache and reload deterministically."""
     try:
         _cached_employees.clear()
     except Exception:
         pass
     st.session_state.employees = _cached_employees(company_id)
 
+
+
+def back_to_company_selection(key: str):
+    """
+    Show a button that clears session_state (company/employees/schedule)
+    and επαναφέρει στην επιλογή εταιρείας.
+    """
+    if st.button("⬅️ Επιστροφή στην Επιλογή Επιχείρησης", key=key):
+        for k in ("company", "employees", "schedule", "missing_staff", "violations"):
+            st.session_state.pop(k, None)
+        st.rerun()
+
+
+
+
+
+# ===== Helpers for Employees page (added) =====
+def _empty_state(title: str, bullets: list[str] | None = None, demo_button: bool = False, on_demo=None):
+    st.info(f"**{title}**")
+    for b in (bullets or []):
+        st.markdown(f"- {b}")
+    if demo_button and st.button("🪄 Γέμισε με demo υπαλλήλους"):
+        if callable(on_demo):
+            on_demo()
+            st.success("Προστέθηκαν demo υπάλληλοι.")
+            st.rerun()
+
+def _employee_roles(emp: dict) -> list[str]:
+    roles = emp.get("roles") or []
+    if isinstance(roles, str):
+        # handle CSV string
+        roles = [r.strip() for r in roles.split(",") if r.strip()]
+    if emp.get("role"):
+        r = emp["role"]
+        if r not in roles:
+            roles = roles + [r]
+    # dedup preserve order
+    seen = set()
+    out = []
+    for r in roles:
+        if r not in seen:
+            seen.add(r)
+            out.append(r)
+    return out
+
+def _availability_list(emp: dict) -> list[str]:
+    av = emp.get("availability") or []
+    if isinstance(av, str):
+        av = [x.strip() for x in av.split(",") if x.strip()]
+    # unique
+    return list(dict.fromkeys(av))
+
+def _sanitize_default(options: list[str], selected: list[str] | None) -> tuple[list[str], list[str]]:
+    opts = set(options or [])
+    sel = selected or []
+    valid = [x for x in sel if x in opts]
+    missing = [x for x in sel if x not in opts]
+    return valid, missing
+
+def _add_employee_handler(company: dict, name: str, roles: list[str], availability: list[str]):
+    name = (name or "").strip()
+    if not name:
+        st.warning("Δώσε όνομα υπαλλήλου.")
+        return
+    role_opts = company.get("roles", []) or []
+    shift_opts = company.get("active_shifts", []) or []
+    roles, _ = _sanitize_default(role_opts, roles or [])
+    availability, _ = _sanitize_default(shift_opts, availability or [])
+    if callable(add_employee):
+        try:
+            add_employee(int(company.get("id", -1)), name, roles, availability)
+            _refresh_employees(int(company.get("id", -1)))
+            st.toast("➕ Προστέθηκε υπάλληλος.", icon="✅")
+        except Exception as ex:
+            st.error(f"Αποτυχία προσθήκης: {ex}")
+    else:
+        st.session_state.setdefault("employees", [])
+        st.session_state.employees.append({"id": -1, "name": name, "roles": roles, "availability": availability})
+
+def _save_employee_handler(emp: dict, new_name: str, new_roles: list[str], new_av: list[str],
+                           role_options: list[str], shift_options: list[str]):
+    new_name = (new_name or "").strip()
+    if not new_name:
+        st.warning("Το όνομα δεν μπορεί να είναι κενό.")
+        return
+    roles, _ = _sanitize_default(role_options or [], new_roles or [])
+    av, _ = _sanitize_default(shift_options or [], new_av or [])
+    if callable(update_employee) and emp.get("id"):
+        try:
+            update_employee(int(emp["id"]), new_name, roles, av)
+            _refresh_employees(int(st.session_state.company.get("id", -1)))
+            st.toast("💾 Αποθηκεύτηκαν οι αλλαγές.", icon="✅")
+        except Exception as ex:
+            st.error(f"Αποτυχία αποθήκευσης: {ex}")
+    else:
+        for e in st.session_state.get("employees", []):
+            if e is emp or e.get("id") == emp.get("id"):
+                e["name"], e["roles"], e["availability"] = new_name, roles, av
+                break
+
+def _delete_employee_handler(emp: dict):
+    if callable(delete_employee) and emp.get("id"):
+        try:
+            delete_employee(int(emp["id"]))
+            _refresh_employees(int(st.session_state.company.get("id", -1)))
+            st.toast("🗑️ Διαγράφηκε.", icon="✅")
+        except Exception as ex:
+            st.error(f"Αποτυχία διαγραφής: {ex}")
+    else:
+        st.session_state["employees"] = [e for e in st.session_state.get("employees", []) if e is not emp and e.get("id") != emp.get("id")]
+
+def _demo_seed():
+    company = st.session_state.get("company", {}) or {}
+    role_opts = company.get("roles", []) or []
+    shift_opts = company.get("active_shifts", []) or []
+    demos = [
+        ("Μαρία", role_opts[:1], shift_opts[:2]),
+        ("Γιάννης", role_opts[:2], shift_opts[:2]),
+        ("Ελένη", role_opts[-1:], shift_opts[-2:] if len(shift_opts) >= 2 else shift_opts),
+    ]
+    if callable(add_employee):
+        for n, r, a in demos:
+            try:
+                add_employee(int(company.get("id", -1)), n, r, a)
+            except Exception:
+                pass
+        _refresh_employees(int(company.get("id", -1)))
+    else:
+        st.session_state.setdefault("employees", [])
+        for n, r, a in demos:
+            st.session_state.employees.append({"id": -1, "name": n, "roles": r, "availability": a})
+
+
+# ------------------------- Enhanced schedule helpers ------------------------- #
+def _push_history(df):
+    hist = st.session_state.setdefault("_sched_history", [])
+    hist.append(df.copy())
+    if len(hist) > 10:
+        st.session_state["_sched_history"] = hist[-10:]
+
+def _pop_history():
+    hist = st.session_state.get("_sched_history", [])
+    if hist:
+        return hist.pop()
+    return None
+
+def _df_with_select(df):
+    df2 = df.copy()
+    if "✓" not in df2.columns:
+        df2.insert(0, "✓", False)
+    return df2
+
+def _apply_bulk(ed, *, set_role=None, set_hours=None, set_employee=None):
+    mask = ed["✓"] == True if "✓" in ed.columns else [False]*len(ed)
+    idx = ed.index[mask] if hasattr(mask, "any") else []
+    if len(idx) == 0:
+        st.warning("Επίλεξε γραμμές (στήλη ✓).")
+        return ed
+    out = ed.copy()
+    if set_role is not None:
+        out.loc[idx, "Ρόλος"] = set_role if set_role != "— (χωρίς ρόλο)" else None
+    if set_hours is not None:
+        out.loc[idx, "Ώρες"] = float(set_hours)
+    if set_employee is not None:
+        out.loc[idx, "Υπάλληλος"] = set_employee
+    return out
+
+def _copy_week(df, *, days=7):
+    if df.empty:
+        return df
+    block = df.copy()
+    block["Ημερομηνία"] = pd.to_datetime(block["Ημερομηνία"]).dt.date + timedelta(days=days)
+    return pd.concat([df, block], ignore_index=True)
 # ======================== PAGES ========================
 
 def page_select_company():
-    """Company selection page."""
     st.subheader("🏢 Επιλογή Επιχείρησης")
 
-    # removed odd dead call pattern
     companies = get_all_companies() if callable(get_all_companies) else []
     if not companies:
         if callable(create_company) and callable(get_all_companies):
@@ -195,25 +545,14 @@ def page_select_company():
         st.session_state.employees = get_employees(company_id) if callable(get_employees) else []
         st.rerun()
 
-    with st.expander("Δεν βλέπεις εταιρεία;"):
-        new_name = st.text_input("Όνομα νέας εταιρείας", key="new_co_name")
-        create_disabled = not bool(new_name.strip())
-        if st.button("➕ Δημιουργία", disabled=create_disabled):
-            if callable(create_company):
-                create_company(new_name.strip())
-                st.success("Η εταιρεία δημιουργήθηκε.")
-                st.rerun()
-            else:
-                st.info("Λειτουργία επίδειξης: η ΒΔ δεν είναι διαθέσιμη.")
-
 def page_business():
-    """Company settings page (polished)."""
     _apply_global_style()
     back_to_company_selection("back_business")
     st.subheader("⚙️ Ρυθμίσεις Επιχείρησης")
 
     if "company" not in st.session_state or not st.session_state.get("company", {}):
         st.warning("Δεν έχει επιλεγεί επιχείρηση.")
+        page_select_company()
         return
 
     company = st.session_state.company
@@ -252,7 +591,6 @@ def page_business():
             if new_role and new_role not in company["roles"]:
                 company["roles"].append(new_role)
                 st.toast("Προστέθηκε ρόλος.")
-        # Wire up defaults button (merge, non-destructive)
         if cols[1].button("📦 Προεπιλεγμένοι ρόλοι", help="Συγχώνευση με τους τρέχοντες ρόλους.", use_container_width=True):
             before = set(company.get("roles", []))
             company["roles"] = sorted(before | set(DEFAULT_ROLES))
@@ -284,11 +622,10 @@ def page_business():
 
     with st.expander("⚖️ Κανόνες", expanded=False):
         rules = company.get("rules", {})
-        # allow fractional hours everywhere except max_consecutive_days
         rule_defs = {
             "max_daily_hours_5days": (6.0, 12.0, float(rules.get("max_daily_hours_5days", 8))),
             "max_daily_hours_6days": (6.0, 12.0, float(rules.get("max_daily_hours_6days", 9))),
-            "max_daily_hours_7days": (6.0, 12.0, float(rules.get("max_daily_hours_7days", 9))),  # fixed default
+            "max_daily_hours_7days": (6.0, 12.0, float(rules.get("max_daily_hours_7days", 9))),
             "max_daily_overtime":    (0.0, 6.0,  float(rules.get("max_daily_overtime", 3))),
             "min_daily_rest":        (8.0, 24.0, float(rules.get("min_daily_rest", 11))),
             "weekly_hours_5days":    (30.0, 60.0, float(rules.get("weekly_hours_5days", 40))),
@@ -323,17 +660,17 @@ def page_employees():
 
     if "company" not in st.session_state:
         st.warning("Επιλέξτε επιχείρηση πρώτα.")
+        page_select_company()
         return
 
     company = st.session_state.company
     st.session_state.setdefault("employees", _cached_employees(company.get("id", -1)))
 
-    # warn on duplicate names to avoid name→id ambiguity later
     try:
         names = [e.get("name", "") for e in st.session_state.employees]
         dups = {n for n in names if n and names.count(n) > 1}
         if dups:
-            st.warning("Υπάρχουν **διπλά ονόματα** υπαλλήλων: " + ", ".join(sorted(dups)) + ". Συνιστάται μετονομασία ή χρήση μοναδικών αναγνωριστικών.")
+            st.warning("Υπάρχουν **διπλά ονόματα** υπαλλήλων: " + ", ".join(sorted(dups)) + ".")
     except Exception:
         pass
 
@@ -390,651 +727,243 @@ def page_employees():
                         _delete_employee_handler(emp)
 
 # ------------------------- Schedule ------------------------- #
+
 def page_schedule():
+    """
+    Rewritten schedule page: dependable generator + weekly visual grid with editing.
+    """
     _apply_global_style()
     back_to_company_selection("back_schedule")
     st.subheader("📅 Πρόγραμμα")
+
+    if "company" not in st.session_state or not st.session_state.get("company"):
+        st.warning("Δεν έχει επιλεγεί επιχείρηση.")
+        page_select_company()
+        return
+    if not st.session_state.get("employees"):
+        st.warning("Δεν υπάρχουν υπάλληλοι. Προσθέστε για να δημιουργηθεί πρόγραμμα.")
+        return
 
     st.session_state.setdefault("schedule", pd.DataFrame())
     st.session_state.setdefault("missing_staff", pd.DataFrame())
     st.session_state.setdefault("violations", pd.DataFrame())
 
-    if "company" not in st.session_state or not st.session_state.get("company", {}).get("name"):
-        st.warning("Δεν έχει επιλεγεί επιχείρηση.")
-        return
-    if "employees" not in st.session_state or not st.session_state.employees:
-        st.warning("Δεν υπάρχουν υπάλληλοι. Προσθέστε για να δημιουργηθεί πρόγραμμα.")
-        return
-
     company = st.session_state.company
     emps = st.session_state.employees
 
-    tabs = st.tabs(["⚙️ Δημιουργία", "🧱 Visual builder", "🔁 Αιτήματα αλλαγής"])
-    with tabs[0]:
-        _tab_generate(company, emps)
-    with tabs[1]:
-        _tab_visual_builder(company, emps)
-    with tabs[2]:
-        _tab_swaps(company, emps)
+    # Simple schedule page: only generator + table (no Visual builder)
+    _tab_generate(company, emps)
 
-# ======================== Tab: Generate ========================
 def _tab_generate(company: Dict[str, Any], emps: List[Dict[str, Any]]):
-    col_hdr1, col_hdr2, col_hdr3, col_hdr4 = st.columns(4)
-    sched = st.session_state.schedule.copy()
-    if not sched.empty:
+    st.markdown("#### ⚙️ Δημιουργία πίνακα")
+    col = st.columns(3)
+    start_date = col[0].date_input("Έναρξη", dt_date.today(), key="gen_start")
+    horizon = col[1].selectbox("Διάρκεια", ["7 ημέρες", "30 ημέρες"], index=0, key="gen_horizon")
+    days_count = 7 if "7" in horizon else 30
+    use_opt = st.checkbox("🔬 Χρήση MILP optimizer (αν υπάρχει pulp)", value=False)
+
+    if st.button("🛠 Δημιουργία & Προεπισκόπηση", type="primary"):
         try:
-            dser = pd.to_datetime(sched["Ημερομηνία"], errors="coerce").dt.date
-            col_hdr1.metric("Συνολικές βάρδιες", len(sched))
-            col_hdr2.metric("Υπάλληλοι", len(emps))
-            col_hdr3.metric("Ημέρες", len(set(dser)))
-            col_hdr4.metric("Ρόλοι", len(company.get("roles", [])))
+            if use_opt:
+                from scheduler import generate_schedule_opt as _gen
+            else:
+                from scheduler import generate_schedule_v2 as _gen
+            from scheduler import check_violations
         except Exception:
-            pass
-    else:
-        col_hdr1.metric("Συνολικές βάρδιες", 0)
-        col_hdr2.metric("Υπάλληλοι", len(emps))
-        col_hdr3.metric("Ημέρες", 0)
-        col_hdr4.metric("Ρόλοι", len(company.get("roles", [])))
+            st.error("Λείπει η scheduler.generate_schedule_*()")
+            return
+        roles = company.get("roles", [])
+        active_shifts = company.get("active_shifts", [])
+        rules = company.get("rules", {})
+        role_settings = company.get("role_settings", {})
+        # Convert legacy {"Role": {"min_per_shift": N}} to supported {"per_shift": {...}} if needed
+        _rs = role_settings if isinstance(role_settings, dict) else {}
+        if _rs and not any(k in _rs for k in ("per_day", "per_shift", "min_per")):
+            converted = {"per_shift": {s: {} for s in active_shifts}}
+            for role, cfg in _rs.items():
+                if isinstance(cfg, dict):
+                    n = cfg.get("min_per_shift")
+                    if isinstance(n, int) and n > 0:
+                        for s in active_shifts:
+                            converted["per_shift"][s][role] = n
+            role_settings = converted
+        work_model = company.get("work_model", "5ήμερο")
+        df, missing = _gen(start_date, emps, active_shifts, roles, rules, role_settings, days_count, work_model)
+        if not df.empty and not pd.api.types.is_datetime64_any_dtype(df["Ημερομηνία"]):
+            df["Ημερομηνία"] = pd.to_datetime(df["Ημερομηνία"]).dt.date
+        st.session_state.schedule = df
+        st.session_state.missing_staff = missing
+        # quick violations
+        try:
+            tmp = df.copy()
+            if "Ώρες" in tmp.columns:
+                tmp["Ώρες"] = pd.to_numeric(tmp["Ώρες"], errors="coerce").fillna(0).astype(float)
 
-    st.divider()
-    mode = st.radio("Εμβέλεια", ["🗓️ Εβδομαδιαίο", "📅 Μηνιαίο"], horizontal=True, key="mode_sched")
-    days_count = 7 if mode == "🗓️ Εβδομαδιαίο" else 30
-    start_date = st.date_input("Έναρξη", dt_date.today(), key="start_sched")
+            st.session_state.violations = check_violations(tmp, rules=rules, work_model=work_model)
+        except Exception:
+            st.session_state.violations = pd.DataFrame()
 
-    colb1, colb2 = st.columns([0.35, 0.35])
-    with colb1:
-        generate_clicked = st.button("🛠 Δημιουργία", type="primary", key="btn_generate")
-        if days_count == 30:
-            st.caption("⚠️ Η δημιουργία για 30 ημέρες θα αντικαταστήσει όλο το διάστημα.")
-            confirm_month = st.checkbox("Επιβεβαιώνω την αντικατάσταση όλων των 30 ημερών", key="confirm_month")
-        else:
-            confirm_month = True
-    with colb2:
-        refix_clicked = st.button("🧹 Επανέλεγχος & Auto‑διόρθωση", help="Εφάρμοσε κανόνες στο τρέχον πρόγραμμα")
+    df = st.session_state.schedule.copy()
+    if df.empty:
+        st.info("Καμία προεπισκόπηση ακόμα. Πάτησε **Δημιουργία & Προεπισκόπηση**.")
+        return
 
-    if generate_clicked and confirm_month:
-        _generate_and_save(company, emps, start_date, days_count)
-    elif generate_clicked and not confirm_month:
-        st.warning("Χρειάζεται επιβεβαίωση για αποθήκευση ολόκληρου μήνα.")
-
-    if refix_clicked and not st.session_state.schedule.empty:
-        _refix_current(company, emps)
-
-# ======================== Tab: Visual Builder ========================
-def _tab_visual_builder(company: Dict[str, Any], emps: List[Dict[str, Any]]):
-    st.caption("Ο πίνακας αφορά στην **ορατή εβδομάδα**. Για ολόκληρο μήνα χρησιμοποίησε τη Δημιουργία.")
-    start_date = st.date_input("Έναρξη εβδομάδας", dt_date.today(), key="vb_start")
-    dates = [start_date + timedelta(days=i) for i in range(7)]
-
-    active_shifts = company.get("active_shifts", [])
-    grid_df = _grid_from_db_week(company["id"], emps, dates[0])
-
-    col_labels = { _column_key(d, s): f"{DAYS[d.weekday()]} {d.strftime('%d/%m')} • {s}"
-                   for d in dates for s in (set(active_shifts) | {c.split('__',1)[1] for c in grid_df.columns if c!='Υπάλληλος'}) }
-
-    role_choices = ["— (καμία)", "— (χωρίς ρόλο)"] + company.get("roles", [])
-    colcfg = {k: st.column_config.SelectboxColumn(label=col_labels.get(k, k), options=role_choices, default="— (καμία)")
-              for k in grid_df.columns if k != "Υπάλληλος"}
+    st.markdown("#### 🧾 Πίνακας προεπισκόπησης")
+    role_opts = ["— (χωρίς ρόλο)"] + company.get("roles", [])
+    view_df = _df_with_select(df.copy())
+    view_df["Ημερομηνία"] = pd.to_datetime(view_df["Ημερομηνία"]).dt.strftime("%Y-%m-%d")
+    names = [e.get("name","") for e in emps]
 
     edited = st.data_editor(
-        grid_df,
-        column_config={"Υπάλληλος": st.column_config.TextColumn("Υπάλληλος", disabled=True), **colcfg},
-        use_container_width=True, hide_index=True, num_rows="fixed", key="vb_editor", height=360
-    )
-    # 🔎 Legend to clarify placeholders (avoids UX confusion)
-    st.caption("ⓘ Συμβάσεις: **— (καμία)** = καμία ανάθεση • **— (χωρίς ρόλο)** = ανάθεση χωρίς ρόλο")
-
-    colA, colB = st.columns([0.5, 0.5])
-    with colA:
-        if st.button(f"💾 Αποθήκευση εβδομάδας ({dates[0].isoformat()} → {dates[-1].isoformat()})", type="primary"):
-            errs = _validate_no_double_bookings(edited)
-            if errs:
-                for e in errs: st.error(e)
-            else:
-                assignments = _assignments_from_grid(edited, emps, dates[0])
-                if company.get("id", 0) < 0:
-                    st.info("Demo εταιρεία: η αποθήκευση στη ΒΔ είναι απενεργοποιημένη.")
-                else:
-                    try:
-                        _save_assignments(company["id"], dates[0].isoformat(), dates[-1].isoformat(), assignments)  # 4-arg path if available
-                        st.success("Αποθηκεύτηκε το εβδομαδιαίο πρόγραμμα.")
-                    except Exception as ex:
-                        st.error(f"Αποτυχία αποθήκευσης: {ex}")
-                st.rerun()
-    with colB:
-        if st.button("🔄 Φόρτωση από ΒΔ"):
-            # clear only the targeted caches (avoid nuking unrelated cache)
-            try:
-                _cached_schedule.clear()
-            except Exception:
-                pass
-            try:
-                _cached_employees.clear()
-            except Exception:
-                pass
-            st.rerun()
-
-# ======================== Tab: Swaps ========================
-def _tab_swaps(company: Dict[str, Any], emps: List[Dict[str, Any]]):
-    def _has_sig_params(fn, required_params: List[str]) -> bool:
-        try:
-            if not callable(fn): return False
-            params = list(inspect.signature(fn).parameters.keys())
-            return all(p in params for p in required_params)
-        except Exception:
-            return False
-
-    SWAPS_OK = (
-        _has_sig_params(create_swap_request, ["company_id", "requester_id", "target_employee_id", "date", "shift"]) and
-        _has_sig_params(list_swap_requests, ["company_id"]) and
-        _has_sig_params(update_swap_status, ["request_id", "status"]) and
-        _has_sig_params(apply_approved_swap, ["company_id", "date", "shift", "requester_id", "target_employee_id"]) and
-        _has_sig_params(get_schedule_range, ["company_id", "start_date", "end_date"]) and
-        _has_sig_params(get_employee_id_by_name, ["company_id", "name"])
-    )
-    if not SWAPS_OK:
-        st.info("Η ενότητα είναι απενεργοποιημένη: τα DB helpers δεν είναι πλήρως συμβατά.")
-        return
-
-    with st.expander("📝 Υποβολή αιτήματος (εργαζόμενου)", expanded=False):
-        st.caption("Ανταλλαγή για **το ίδιο είδος βάρδιας** την ίδια ημέρα.")
-        emp_names = [e["name"] for e in emps]
-        req_emp = st.selectbox("Αιτών", emp_names, key="swap_req_emp")
-        target_emp = st.selectbox("Συνάδελφος", [n for n in emp_names if n != req_emp], key="swap_target_emp")
-        req_date = st.date_input("Ημερομηνία", dt_date.today(), key="swap_date")
-        req_shift = st.selectbox("Βάρδια", company.get("active_shifts", []), key="swap_shift")
-
-        if st.button("📨 Υποβολή αιτήματος"):
-            rid = get_employee_id_by_name(company["id"], req_emp)
-            tid = get_employee_id_by_name(company["id"], target_emp)
-            have = get_schedule_range(company["id"], req_date.isoformat(), req_date.isoformat())
-            target_has = any(x.get("employee_id") == tid and x.get("shift") == req_shift for x in (have or []))
-            requester_has = any(x.get("employee_id") == rid and x.get("shift") == req_shift for x in (have or []))
-            if not requester_has:
-                st.error("Ο αιτών δεν έχει αυτή τη βάρδια.")
-            elif not target_has:
-                st.error("Ο συνάδελφος δεν έχει αυτή τη βάρδια.")
-            else:
-                create_swap_request(company["id"], rid, tid, req_date.isoformat(), req_shift)
-                st.success("Καταχωρήθηκε αίτημα (pending).")
-
-    with st.expander("📋 Εκκρεμή αιτήματα (manager)", expanded=True):
-        pending = list_swap_requests(company["id"], status="pending")
-        if not pending:
-            st.info("Καμία εκκρεμότητα.")
-        else:
-            for r in pending:
-                st.markdown(f"- **#{r['id']}** {r['date']} • *{r['shift']}* — {r['requester_name']} → {r['target_name']}")
-                c1, c2, c3 = st.columns([0.2, 0.2, 0.6])
-                note = c3.text_input("Σημείωση", key=f"note_{r['id']}")
-                if c1.button("✅ Έγκριση", key=f"ok_{r['id']}"):
-                    day_sched = get_schedule_range(company["id"], r["date"], r["date"])
-                    req_has = any(x.get("employee_id") == r["requester_id"] and x.get("shift") == r["shift"] for x in (day_sched or []))
-                    target_has = any(x.get("employee_id") == r["target_employee_id"] and x.get("shift") == r["shift"] for x in (day_sched or []))
-                    if not (req_has and target_has):
-                        st.error("Το ζεύγος βαρδιών δεν είναι έγκυρο πλέον.")
-                    else:
-                        update_swap_status(r["id"], "approved", note)
-                        apply_approved_swap(company["id"], r["date"], r["shift"], r["requester_id"], r["target_employee_id"])
-                        st.success("Εφαρμόστηκε.")
-                        st.rerun()
-                if c2.button("⛔️ Απόρριψη", key=f"reject_{r['id']}"):
-                    update_swap_status(r["id"], "rejected", note)
-                    st.info("Απορρίφθηκε.")
-                    st.rerun()
-
-# ------------------------- Handlers ------------------------- #
-def _add_employee_handler(company, name, roles, availability):
-    errors = []
-    if not name.strip():
-        errors.append("Το όνομα είναι υποχρεωτικό.")
-    if any(r not in company.get("roles", []) for r in roles):
-        errors.append("Μη έγκυρος ρόλος.")
-    if any(s not in company.get("active_shifts", []) for s in availability):
-        errors.append("Μη έγκυρη βάρδια διαθεσιμότητας.")
-    if errors:
-        for e in errors: st.error(e)
-        return
-
-    fresh = get_company(company.get("id")) if callable(get_company) else company
-    if not fresh:
-        st.error("Η επιχείρηση δεν υπάρχει πλέον.")
-        st.session_state.pop("company", None)
-        st.rerun()
-    if fresh.get("id", 0) < 0:
-        st.info("Demo εταιρεία: η προσθήκη υπαλλήλου δεν αποθηκεύεται στη ΒΔ.")
-        st.stop()
-
-    try:
-        if callable(add_employee):
-            add_employee(fresh["id"], name.strip(), roles, availability)
-            _refresh_employees(fresh["id"])
-            st.success(f"Προστέθηκε ο/η {name.strip()}")
-            st.rerun()
-        else:
-            st.info("Λειτουργία επίδειξης: η ΒΔ δεν είναι διαθέσιμη.")
-    except Exception as ex:
-        st.error(f"Αποτυχία προσθήκης: {ex}")
-
-def _save_employee_handler(emp, new_name, new_roles, new_av, role_options, shift_options):
-    if any(r not in role_options for r in new_roles):
-        st.error("Μη έγκυρος ρόλος.")
-        return
-    if any(s not in shift_options for s in new_av):
-        st.error("Μη έγκυρη βάρδια διαθεσιμότητας.")
-        return
-    try:
-        if callable(update_employee) and callable(get_employees):
-            update_employee(emp["id"], new_name.strip(), new_roles, new_av)
-            _refresh_employees(st.session_state.company["id"])
-            st.success("Αποθηκεύτηκε.")
-            st.rerun()
-        else:
-            st.info("Λειτουργία επίδειξης: η ΒΔ δεν είναι διαθέσιμη.")
-    except Exception as ex:
-        st.error(f"Αποτυχία αποθήκευσης: {ex}")
-
-def _delete_employee_handler(emp):
-    try:
-        if callable(delete_employee) and callable(get_employees):
-            delete_employee(emp["id"])
-            st.session_state[f"confirm_del_{emp['id']}"] = False
-            _refresh_employees(st.session_state.company["id"])
-            st.success("Διαγράφηκε.")
-            st.rerun()
-        else:
-            st.info("Λειτουργία επίδειξης: η ΒΔ δεν είναι διαθέσιμη.")
-    except Exception as ex:
-        st.error(f"Αποτυχία διαγραφής: {ex}")
-
-# ------------------------- Core Scheduling Helpers ------------------------- #
-def _sanitize_default(options: List[str], default_vals: List[str]) -> Tuple[List[str], List[str]]:
-    opts = set(options or [])
-    default_vals = default_vals or []
-    valid = [v for v in default_vals if v in opts]
-    missing = [v for v in default_vals if v not in opts]
-    return valid, missing
-
-def _shift_len(shift: str) -> float:
-    """Return shift length in hours (float). Warn on unknown keys to avoid masking typos/custom mismatches."""
-    if shift not in SHIFT_TIMES:
-        st.warning(f"Άγνωστη βάρδια '{shift}' στους ορισμούς χρόνων. Παραλείπεται (0 ώρες).")
-        return 0.0
-    s, e = SHIFT_TIMES[shift]
-    return float((24 - s + e) if e < s else (e - s))
-
-def _ensure_schedule_df(df: Optional[pd.DataFrame]) -> pd.DataFrame:
-    cols = ["Ημέρα", "Ημερομηνία", "Βάρδια", "Υπάλληλος", "Ρόλος", "Ώρες"]
-    if df is None or df.empty:
-        out = pd.DataFrame(columns=cols)
-        out["Ώρες"] = pd.Series([], dtype="float64")
-        return out
-    for c in cols:
-        if c not in df.columns:
-            df[c] = 0 if c == "Ώρες" else ""
-    out = df[cols].copy()
-    out["Ώρες"] = pd.to_numeric(out["Ώρες"], errors="coerce").fillna(0).astype(float)
-    return out
-
-def _availability_list(emp: Dict[str, Any]) -> List[str]:
-    av = emp.get("availability", [])
-    if isinstance(av, dict):
-        return [k for k, v in av.items() if v]
-    if isinstance(av, list):
-        return av
-    return []
-
-def _employee_roles(emp: Dict[str, Any]) -> List[str]:
-    roles = emp.get("roles", [])
-    if isinstance(roles, list):
-        return roles
-    if isinstance(roles, str) and roles.strip():
-        return [roles.strip()]
-    return []
-
-def generate_schedule(start_date, employees, active_shifts, roles, rules, role_settings, days_count):
-    if not employees:
-        empty = _ensure_schedule_df(pd.DataFrame())
-        return empty, pd.DataFrame(columns=["Ημέρα", "Ημερομηνία", "Βάρδια", "Ρόλος", "Λείπουν"])
-
-    start_date = pd.to_datetime(start_date).date()
-    rows, missing = [], []
-    min_per = {r: max(0, int(role_settings.get(r, {}).get("min_per_shift", 1))) for r in roles}
-
-    idx = 0
-    order = list(employees)
-
-    for d in range(days_count):
-        day_dt = start_date + dt.timedelta(days=d)
-        weekday_name = DAYS[day_dt.weekday()]
-        for shift in active_shifts:
-            need = dict(min_per)
-            for _ in range(len(order)):
-                emp = order[idx % len(order)]
-                idx += 1
-                avail_list = _availability_list(emp)
-                if shift not in avail_list:
-                    continue
-                eroles = _employee_roles(emp)
-                if not eroles:
-                    continue
-
-                placed = False
-                for r in sorted(eroles, key=lambda x: role_settings.get(x, {}).get("priority", 5)):
-                    if r not in roles:
-                        continue
-                    if need.get(r, 0) > 0:
-                        rows.append({
-                            "Ημέρα": weekday_name,
-                            "Ημερομηνία": str(day_dt),
-                            "Βάρδια": shift,
-                            "Υπάλληλος": emp.get("name", ""),
-                            "Ρόλος": r,
-                            "Ώρες": float(_shift_len(shift)),
-                        })
-                        need[r] -= 1
-                        placed = True
-                        break
-                if placed and all(v == 0 for v in need.values()):
-                    break
-
-            for r_name, left in need.items():
-                if left > 0:
-                    missing.append({
-                        "Ημέρα": weekday_name,
-                        "Ημερομηνία": str(day_dt),
-                        "Βάρδια": shift,
-                        "Ρόλος": r_name,
-                        "Λείπουν": left,
-                    })
-
-    df = pd.DataFrame(rows, columns=["Ημέρα", "Ημερομηνία", "Βάρδια", "Υπάλληλος", "Ρόλος", "Ώρες"])
-    missing_df = pd.DataFrame(missing, columns=["Ημέρα", "Ημερομηνία", "Βάρδια", "Ρόλος", "Λείπουν"])
-    return _ensure_schedule_df(df), missing_df
-
-def _empty_state(header: str, lines: List[str], demo_button: bool = False, on_demo=None):
-    st.subheader(header)
-    for line in lines:
-        st.caption(line)
-    if demo_button and on_demo:
-        if st.button("✨ Συμπλήρωση demo δεδομένων", type="secondary"):
-            on_demo()
-            st.toast("Δημιουργήθηκαν demo δεδομένα", icon="✨")
-            st.rerun()
-
-def back_to_company_selection(key: str):
-    if st.button("⬅️ Επιστροφή στην Επιλογή Επιχείρησης", key=key):
-        for k in ("company", "employees", "schedule", "missing_staff"):
-            st.session_state.pop(k, None)
-        st.rerun()
-
-def _demo_seed():
-    st.session_state.company = {
-        "id": -1,
-        "name": "Demo Coffee",
-        "work_model": "5ήμερο",
-        "rules": {
-            "max_daily_hours_5days": 8,
-            "weekly_hours_5days": 40,
-            "min_daily_rest": 11,
-            "max_consecutive_days": 6
+        view_df,
+        column_config={
+            "✓": st.column_config.CheckboxColumn("✓"),
+            "Βάρδια": st.column_config.TextColumn("Βάρδια", disabled=True),
+            "Ημερομηνία": st.column_config.TextColumn("Ημερομηνία", disabled=True),
+            "Υπάλληλος": st.column_config.SelectboxColumn("Υπάλληλος", options=names, required=True),
+            "Ρόλος": st.column_config.SelectboxColumn("Ρόλος", options=role_opts, required=False),
+            "Ώρες": st.column_config.NumberColumn("Ώρες", step=0.5, format="%.1f"),
         },
-        "roles": ["Barista", "Cashier"],
-        "active_shifts": ["Πρωί", "Απόγευμα"],
-        "role_settings": {
-            "Barista": {"priority": 3, "min_per_shift": 1, "preferred_shifts": ["Πρωί"]},
-            "Cashier": {"priority": 5, "min_per_shift": 1, "preferred_shifts": ["Απόγευμα"]},
-        }
-    }
-    st.session_state.employees = [
-        {"id": 1, "name": "Maria Papadopoulou", "roles": ["Barista"], "availability": ["Πρωί", "Απόγευμα"]},
-        {"id": 2, "name": "Nikos Georgiou", "roles": ["Cashier"], "availability": ["Απόγευμα"]},
-        {"id": 3, "name": "Eleni Kostopoulou", "roles": ["Barista", "Cashier"], "availability": ["Πρωί", "Απόγευμα"]},
-    ]
-    today = dt.date.today()
-    rows = []
-    for i in range(7):
-        d = today + dt.timedelta(days=i)
-        rows.append({"Ημέρα": DAYS[d.weekday()], "Ημερομηνία": str(d), "Βάρδια": "Πρωί", "Υπάλληλος": "Maria Papadopoulou", "Ρόλος": "Barista", "Ώρες": 8.0})
-        rows.append({"Ημέρα": DAYS[d.weekday()], "Ημερομηνία": str(d), "Βάρδια": "Απόγευμα", "Υπάλληλος": "Nikos Georgiou", "Ρόλος": "Cashier", "Ώρες": 7.0})
-    st.session_state.schedule = pd.DataFrame(rows)
-    st.session_state.missing_staff = pd.DataFrame()
-
-# ------------------------- Grid / IO helpers ------------------------- #
-def _week_dates(start_date: dt.date, days: int = 7) -> List[dt.date]:
-    return [start_date + dt.timedelta(days=i) for i in range(days)]
-
-def _column_key(date: dt.date, shift: str) -> str:
-    return f"{date.isoformat()}__{shift}"
-
-def _parse_column_key(k: str) -> Tuple[dt.date, str]:
-    d, s = k.split("__", 1)
-    return dt.date.fromisoformat(d), s
-
-def _overlap(a_shift: str, b_shift: str) -> bool:
-    # Conservative: unknown shift definitions are treated as overlapping to avoid double-bookings.
-    unknown = []
-    if a_shift not in SHIFT_TIMES:
-        unknown.append(a_shift)
-    if b_shift not in SHIFT_TIMES:
-        unknown.append(b_shift)
-    if unknown:
-        st.error(f"Άγνωστες βάρδιες στον έλεγχο επικαλύψεων: {', '.join(sorted(set(unknown)))}. "
-                 "Θεωρούνται επικαλυπτόμενες μέχρι να οριστούν στους χρόνους.")
-        return True
-
-    sa, ea = SHIFT_TIMES[a_shift]
-    sb, eb = SHIFT_TIMES[b_shift]
-
-    def _range(s, e):
-        if e < s:  # wrap at midnight
-            return [(s, 24), (24, 24 + e)]
-        return [(s, e)]
-
-    ra, rb = _range(sa, ea), _range(sb, eb)
-    for a1, a2 in ra:
-        for b1, b2 in rb:
-            if max(a1, b1) < min(a2, b2):
-                return True
-    return False
-
-
-def _validate_no_double_bookings(grid_df: pd.DataFrame) -> List[str]:
-    errors = []
-    for _, row in grid_df.iterrows():
-        name = row["Υπάλληλος"]
-        per_day: Dict[dt.date, List[str]] = {}
-        for col, val in row.items():
-            if col == "Υπάλληλος" or not val or val == "— (καμία)":
-                continue
-            d, s = _parse_column_key(col)
-            per_day.setdefault(d, []).append(s)
-        for day, shifts in per_day.items():
-            for i in range(len(shifts)):
-                for j in range(i + 1, len(shifts)):
-                    if _overlap(shifts[i], shifts[j]):
-                        errors.append(f"Διπλοκράτηση: {name} την {day} ({shifts[i]} ↔ {shifts[j]})")
-    return errors
-
-def _grid_from_db_week(company_id: int, employees: List[Dict[str, Any]], start_date: dt.date) -> pd.DataFrame:
-    dates = _week_dates(start_date)
-    active_shifts = st.session_state.company.get("active_shifts", [])
-    cols = ["Υπάλληλος"] + [_column_key(d, s) for d in dates for s in active_shifts]
-    df = pd.DataFrame(columns=cols)
-    df["Υπάλληλος"] = [e["name"] for e in employees]
-    for c in cols:
-        if c != "Υπάλληλος":
-            df[c] = "— (καμία)"
-
-    # bring existing + surface legacy/inactive shifts by adding columns on-the-fly
-    if callable(get_schedule_range):
-        try:
-            existing = _cached_schedule(company_id, dates[0].isoformat(), dates[-1].isoformat())
-            legacy_cols_added: set = set()
-            for row in existing or []:
-                d = dt.date.fromisoformat(row["date"])
-                s = row["shift"]
-                key = _column_key(d, s)
-                value = row.get("role") if row.get("role") else "— (χωρίς ρόλο)"
-                if key not in df.columns:
-                    # inactive/legacy shift: add column dynamically so users don't think data is lost
-                    df[key] = "— (καμία)"
-                    legacy_cols_added.add(key)
-                df.loc[df["Υπάλληλος"] == row.get("employee_name", ""), key] = value
-            if legacy_cols_added:
-                st.info("Βρέθηκαν αναθέσεις σε **ανενεργές βάρδιες** για την εβδομάδα. Εμφανίζονται προσωρινά ώστε να μην χαθούν.")
-        except Exception:
-            st.info("⚠️ Αδυναμία φόρτωσης εβδομάδας από ΒΔ (έλεγχος συμβατότητας).")
-    else:
-        st.info("Η φόρτωση εβδομάδας από τη ΒΔ δεν είναι διαθέσιμη (λείπει get_schedule_range).")
-    return df
-
-def _assignments_from_grid(grid_df: pd.DataFrame, employees: List[Dict[str, Any]], start_date: dt.date) -> Tuple[List[Dict[str, Any]], List[str]]:
-    """
-    Build DB assignment rows from the grid.
-    Returns (assignments, errors). If any errors exist, caller MUST abort save.
-    """
-    name_to_ids: Dict[str, List[int]] = {}
-    for e in employees:
-        name_to_ids.setdefault(e["name"], []).append(e["id"])
-
-    errors: List[str] = []
-
-    def _resolve_id(emp_name: str) -> Optional[int]:
-        lst = name_to_ids.get(emp_name) or []
-        if len(lst) == 1:
-            return lst[0]
-        # Ambiguous or missing → try DB resolver if available (will raise on duplicates)
-        if callable(get_employee_id_by_name):
-            try:
-                return get_employee_id_by_name(st.session_state.company["id"], emp_name)
-            except Exception as ex:
-                errors.append(f"Αδυναμία ταυτοποίησης υπαλλήλου '{emp_name}': {ex}")
-                return None
-        # No DB resolver; never guess
-        if not lst:
-            errors.append(f"Δεν βρέθηκε υπάλληλος '{emp_name}'.")
-        else:
-            errors.append(f"Διπλότυπο όνομα υπαλλήλου '{emp_name}' χωρίς ασφαλή επίλυση.")
-        return None
-
-    valid_roles = set(st.session_state.company.get("roles", []))
-    assignments: List[Dict[str, Any]] = []
-
-    for _, row in grid_df.iterrows():
-        emp_name = row["Υπάλληλος"]
-        emp_id = _resolve_id(emp_name)
-        if not emp_id:
-            continue
-        for col, val in row.items():
-            if col == "Υπάλληλος" or not val or val == "— (καμία)":
-                continue
-            d, s = _parse_column_key(col)
-            if val == "— (χωρίς ρόλο)":
-                assignments.append({"employee_id": emp_id, "date": d.isoformat(), "shift": s, "role": None})
-            elif val in valid_roles:
-                assignments.append({"employee_id": emp_id, "date": d.isoformat(), "shift": s, "role": val})
-            else:
-                assignments.append({"employee_id": emp_id, "date": d.isoformat(), "shift": s, "role": None})
-
-    return assignments, errors
-
-
-# ======================== Generate helpers ========================
-def _save_assignments(company_id: int, start_iso: str, end_iso: str, entries: List[Dict[str, Any]]):
-    """Call DB writer with preferred (company_id, start, end, entries), fall back to legacy (company_id, entries)."""
-    if not callable(bulk_save_week_schedule):
-        raise RuntimeError("bulk_save_week_schedule is not available")
-    sig = None
-    try:
-        sig = inspect.signature(bulk_save_week_schedule)
-    except Exception:
-        pass
-    try:
-        if sig and len(sig.parameters) >= 4:
-            return bulk_save_week_schedule(company_id, start_iso, end_iso, entries)  # new API
-        return bulk_save_week_schedule(company_id, entries)  # legacy fallback
-    except TypeError:
-        # hard fallback if signature inspection failed
-        return bulk_save_week_schedule(company_id, start_iso, end_iso, entries)
-
-def _generate_and_save(company, emps, start_date, days_count):
-    df, missing_df = generate_schedule(
-        start_date,
-        emps,
-        company.get("active_shifts", []),
-        company.get("roles", []),
-        company.get("rules", {}),
-        company.get("role_settings", {}),
-        days_count,
+        use_container_width=True, hide_index=True, num_rows="dynamic", key="gen_editor", height=380
     )
-    if callable(_auto_fix_schedule):
-        fixed_df, viols = _auto_fix_schedule(
-            df, emps,
-            company.get("active_shifts", []),
-            company.get("roles", []),
-            company.get("rules", {}),
-            company.get("role_settings", {}),
-            company.get("work_model", "5ήμερο"),
-        )
-    else:
-        _df_for_validation = df.copy()
-        if "Ώρες" in _df_for_validation.columns:
-            _df_for_validation["Ώρες"] = pd.to_numeric(_df_for_validation["Ώρες"], errors="coerce").fillna(0).astype(float)
-        viols = check_violations(_df_for_validation, company.get("rules", {}), company.get("work_model", "5ήμερο"))
-        fixed_df = df
+    
+    ed = edited.copy()
+    # Normalize types
+    ed["Ημερομηνία"] = pd.to_datetime(ed["Ημερομηνία"]).dt.date
+    ed["Ρόλος"] = ed["Ρόλος"].replace({"— (χωρίς ρόλο)": None})
 
-    st.session_state.schedule = fixed_df
-    st.session_state.missing_staff = missing_df
-    st.session_state.violations = viols
+    st.markdown("#### 🛠️ Εργαλεία")
+    t1, t2, t3, t4, t5, t6 = st.columns(6)
+    with t1:
+        if st.button("🗑️ Διαγραφή επιλεγμένων"):
+            _push_history(st.session_state.schedule)
+            if "✓" in ed.columns:
+                ed = ed[~ed["✓"]].drop(columns=["✓"])
+            st.session_state.schedule = ed
+            st.toast("Διαγράφηκαν.", icon="✅")
+            st.rerun()
+    with t2:
+        if st.button("📋 Αντιγραφή εβδομάδας ➡️ επόμενη"):
+            _push_history(st.session_state.schedule)
+            ed = _copy_week(ed).drop(columns=["✓"], errors="ignore")
+            st.session_state.schedule = ed
+            st.toast("Αντιγράφηκε στο επόμενο 7ήμερο.", icon="✅")
+            st.rerun()
+    with t3:
+        if st.button("↩️ Αναίρεση"):
+            prev = _pop_history()
+            if prev is not None:
+                st.session_state.schedule = prev
+                st.rerun()
+            else:
+                st.info("Δεν υπάρχει ιστορικό.")
+    with t4:
+        up = st.file_uploader("Import CSV", type=["csv"], label_visibility="collapsed")
+        if up is not None:
+            try:
+                newdf = pd.read_csv(up)
+                needed = {"Ημερομηνία","Βάρδια","Υπάλληλος","Ρόλος","Ώρες"}
+                if not needed.issubset(set(newdf.columns)):
+                    st.error("To CSV πρέπει να έχει στήλες: " + ", ".join(needed))
+                else:
+                    newdf["Ημερομηνία"] = pd.to_datetime(newdf["Ημερομηνία"]).dt.date
+                    st.session_state.schedule = newdf
+                    st.toast("Φορτώθηκε CSV.", icon="✅")
+                    st.rerun()
+            except Exception as ex:
+                st.error(f"Σφάλμα στο import: {ex}")
+    with t5:
+        with st.popover("⚙️ Μαζικές αλλαγές"):
+            sel_role = st.selectbox("Ρόλος για επιλεγμένα", ["— (χωρίς ρόλο)"] + company.get("roles", []))
+            sel_emp = st.selectbox("Υπάλληλος για επιλεγμένα", names)
+            sel_hours = st.number_input("Ώρες για επιλεγμένα", 0.0, 24.0, 8.0, step=0.5, format="%.1f")
+            if st.button("Εφαρμογή"):
+                _push_history(st.session_state.schedule)
+                ed = _apply_bulk(ed, set_role=sel_role, set_employee=sel_emp, set_hours=sel_hours)
+                st.session_state.schedule = ed.drop(columns=["✓"], errors="ignore")
+                st.rerun()
+    with t6:
+        with st.popover("➕ Προσθήκη γραμμής"):
+            d_new = st.date_input("Ημερομηνία", value=dt_date.today(), key="add_d")
+            shift_new = st.selectbox("Βάρδια", company.get("active_shifts", []), key="add_s")
+            emp_new = st.selectbox("Υπάλληλος", names, key="add_e")
+            role_new = st.selectbox("Ρόλος", ["— (χωρίς ρόλο)"] + company.get("roles", []), key="add_r")
+            hrs_new = st.number_input("Ώρες", 0.0, 24.0, 8.0, step=0.5, format="%.1f", key="add_h")
+            if st.button("Προσθήκη"):
+                _push_history(st.session_state.schedule)
+                new_row = {"Ημερομηνία": d_new, "Βάρδια": shift_new, "Υπάλληλος": emp_new, "Ρόλος": (None if role_new == "— (χωρίς ρόλο)" else role_new), "Ώρες": float(hrs_new)}
+                st.session_state.schedule = pd.concat([ed.drop(columns=["✓"], errors="ignore"), pd.DataFrame([new_row])], ignore_index=True)
+                st.rerun()
 
-    assignments: List[Dict[str, Any]] = []
-    period_start = start_date
-    period_end = start_date + timedelta(days=days_count - 1)
+    # Persist edited schedule
+    st.session_state.schedule = ed.drop(columns=["✓"], errors="ignore")
 
-    def _name_to_id(nm: str):
-        if callable(get_employee_id_by_name):
-            return get_employee_id_by_name(company["id"], nm)
-        return None
 
-    for _, r in fixed_df.iterrows():
-        d = pd.to_datetime(r["Ημερομηνία"]).date()
-        if period_start <= d <= period_end and r.get("Βάρδια") in company.get("active_shifts", []):
-            eid = _name_to_id(r["Υπάλληλος"])
-            if eid:
-                assignments.append({
-                    "employee_id": eid,
-                    "date": d.isoformat(),
-                    "shift": r["Βάρδια"],
-                    "role": r.get("Ρόλος") or None,
-                })
-    if company.get("id", 0) < 0:
-        st.info("Demo εταιρεία: δημιουργήθηκε πρόγραμμα, αλλά η αποθήκευση στη ΒΔ είναι απενεργοποιημένη.")
-    else:
+    if st.button("🧩 Auto-fix τρέχοντος πίνακα"):
         try:
-            _save_assignments(company["id"], period_start.isoformat(), period_end.isoformat(), assignments)
-            st.success("Δημιουργήθηκε και αποθηκεύτηκε η περίοδος.")
+            fixed_df, viols = _call_auto_fix_schedule(ed, emps, company, start_date=start_date, days_count=days_count)
+            st.session_state.schedule = fixed_df
+            st.session_state.violations = viols if isinstance(viols, pd.DataFrame) else pd.DataFrame()
+            st.success("Έγινε auto-fix και ενημερώθηκε ο πίνακας.")
+            st.rerun()
         except Exception as ex:
-            st.error(f"Αποτυχία αποθήκευσης: {ex}")
-    st.rerun()
+            st.error(f"Αποτυχία auto-fix: {ex}")
 
-def _refix_current(company, emps):
-    if callable(_auto_fix_schedule):
-        fixed_df, viols = _auto_fix_schedule(
-            st.session_state.schedule, emps,
-            company.get("active_shifts", []),
-            company.get("roles", []),
-            company.get("rules", {}),
-            company.get("role_settings", {}),
-            company.get("work_model", "5ήμερο"),
-        )
-    else:
-        _df_for_validation = st.session_state.schedule.copy()
-        if "Ώρες" in _df_for_validation.columns:
-            _df_for_validation["Ώρες"] = pd.to_numeric(_df_for_validation["Ώρες"], errors="coerce").fillna(0).astype(float)
-        fixed_df = st.session_state.schedule
-        viols = check_violations(_df_for_validation, company.get("rules", {}), company.get("work_model", "5ήμερο"))
-    st.session_state.schedule = fixed_df
-    st.session_state.violations = viols
-    st.success("Ολοκληρώθηκε ο επανέλεγχος.")
-    st.rerun()
+    ed["Ημερομηνία"] = pd.to_datetime(ed["Ημερομηνία"]).dt.date
+    ed["Ρόλος"] = ed["Ρόλος"].replace({"— (χωρίς ρόλο)": None})
+    st.session_state.schedule = ed
+
+    colA, colB, colC = st.columns([0.34, 0.33, 0.33])
+    with colA:
+        if not st.session_state.missing_staff.empty:
+            st.warning("Ανέκλειστες ανάγκες:")
+            st.dataframe(st.session_state.missing_staff, use_container_width=True, height=140)
+    with colB:
+        if not st.session_state.violations.empty:
+            st.error("Παραβιάσεις κανόνων:")
+            st.dataframe(st.session_state.violations, use_container_width=True, height=140)
+    with colC:
+        csv = ed.to_csv(index=False).encode("utf-8")
+        st.download_button("⬇️ Κατέβασμα CSV", data=csv, file_name="schedule_preview.csv", mime="text/csv")
+
+    if st.button("💾 Αποθήκευση εβδομάδας στη ΒΔ"):
+        if not callable(bulk_save_week_schedule):
+            st.info("Η αποθήκευση δεν είναι διαθέσιμη σε αυτό το build.")
+        else:
+            smin = ed["Ημερομηνία"].min().isoformat()
+            smax = ed["Ημερομηνία"].max().isoformat()
+            entries = []
+            for _, r in ed.iterrows():
+                emp_id = None
+                if callable(get_employee_id_by_name):
+                    try:
+                        emp_id = get_employee_id_by_name(company["id"], r["Υπάλληλος"])
+                    except Exception as ex:
+                        st.error(f"Πρόβλημα εύρεσης '{r['Υπάλληλος']}': {ex}")
+                        continue
+                if not emp_id:
+                    for e in st.session_state.employees:
+                        if e.get("name") == r["Υπάλληλος"]:
+                            emp_id = e.get("id"); break
+                if not emp_id:
+                    st.error(f"Άγνωστος υπάλληλος: {r['Υπάλληλος']}"); continue
+                entries.append({
+                    "employee_id": int(emp_id),
+                    "date": r["Ημερομηνία"].isoformat(),
+                    "shift": r["Βάρδια"],
+                    "role": (r["Ρόλος"] if pd.notna(r["Ρόλος"]) else None)
+                })
+            try:
+                bulk_save_week_schedule(company["id"], smin, smax, entries)  # 4-arg modern API
+                st.success("Αποθηκεύτηκε το πρόγραμμα.")
+            except TypeError:
+                # Legacy 3-arg API (without end_date)
+                bulk_save_week_schedule(company["id"], smin, entries)
+                st.success("Αποθηκεύτηκε το πρόγραμμα.")
+            except Exception as ex:
+                st.error(f"Αποτυχία αποθήκευσης: {ex}")
+
+# (Visual builder removed by request)
+
+def _column_key(d, shift):  # helper for grid column key
+    return f"{d.isoformat()}__{shift}"
