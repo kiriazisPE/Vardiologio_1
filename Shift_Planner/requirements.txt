@@ -2,9 +2,8 @@
 streamlit>=1.32
 pandas>=2.2
 numpy>=1.26
-
 # Database
-sqlite3-binary  # stdlib sqlite3 is fine, but some environments want this
+  # stdlib sqlite3 is fine, but some environments want this
 
 # Scheduling / Optimization
 pulp>=2.9       # for MILP optimizer (CBC)
