@@ -15,6 +15,12 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Callable, Optional
 
+# Ensure current directory is on sys.path
+import sys
+_cur = str(Path(__file__).parent.resolve())
+if _cur not in sys.path:
+    sys.path.insert(0, _cur)
+
 import streamlit as st
 from PIL import Image
 from dotenv import load_dotenv
@@ -82,39 +88,35 @@ def _set_page_config_once():
 
 
 def _apply_theme(dark: bool):
-    """Apply a minimal light/dark theme via CSS variables. Keep it tiny to avoid flicker."""
-    # Avoid re-injecting identical CSS repeatedly
+    """Apply a minimal light/dark theme via CSS variables, avoiding hash-based selectors."""
     key = f"theme_css_{'dark' if dark else 'light'}"
     if st.session_state.get("_theme_key") == key:
         return
     st.session_state["_theme_key"] = key
 
-    css = """
-    <style>
-      :root {
-        --bg: %s;
-        --fg: %s;
-        --card: %s;
-        --muted: %s;
-        --accent: %s;
-      }
-      .stApp { background: var(--bg); color: var(--fg); }
-      .stMarkdown, .stText, .stDataFrame { color: var(--fg); }
-      .st-emotion-cache-1r6slb0 { background: var(--card); } /* cards */
-      .st-emotion-cache-1jicfl2, .st-emotion-cache-16txtl3 { color: var(--fg); }
-      header[data-testid="stHeader"] { background: transparent; }
-    </style>
-    """ % (
+    # Stable selectors only: .stApp, [data-testid], header. Avoid emotion hash classes.
+    bg, fg, card, muted, accent = (
         ("#0f172a", "#e5e7eb", "#111827", "#334155", "#22c55e")
         if dark
         else ("#ffffff", "#111827", "#f8fafc", "#cbd5e1", "#0ea5e9")
     )
+
+    css = f"""
+    <style>
+      :root {{ --bg: {bg}; --fg: {fg}; --card: {card}; --muted: {muted}; --accent: {accent}; }}
+      .stApp {{ background: var(--bg); color: var(--fg); }}
+      [data-testid="stSidebar"] {{ background: var(--card); }}
+      header[data-testid="stHeader"] {{ background: transparent; }}
+      /* Basic components */
+      .stMarkdown, .stText, .stDataFrame {{ color: var(--fg); }}
+      .stButton > button {{ border-radius: 0.75rem; }}
+    </style>
+    """
     st.markdown(css, unsafe_allow_html=True)
 
 
 def _toggle_dark_mode_ui():
     """Render a dark mode toggle that avoids double reruns & preserves URL query param."""
-    # Query param sync
     qp = st.query_params
     qp_dark = qp.get("dark", str(SETTINGS.default_dark)).lower() in {"1", "true", "yes"}
 
@@ -122,14 +124,11 @@ def _toggle_dark_mode_ui():
         st.session_state["_dark"] = qp_dark
         st.session_state["_dark_applied_once"] = False  # flicker guard
 
-    # Show the toggle
     new_val = st.sidebar.toggle("🌗 Σκούρο θέμα", value=st.session_state["_dark"])
 
-    # If the user changed it, sync URL param and re-run once
     if new_val != st.session_state["_dark"]:
         st.session_state["_dark"] = new_val
         st.query_params["dark"] = "1" if new_val else "0"
-        # Flicker guard: only rerun when param wasn't already in desired state
         if not st.session_state.get("_dark_applied_once"):
             st.session_state["_dark_applied_once"] = True
             st.rerun()
@@ -138,17 +137,15 @@ def _toggle_dark_mode_ui():
 
 
 def _maybe_auth() -> bool:
-    """Very simple pluggable auth gate. Return True if signed in/allowed, else False.
-    Implement your real auth here. In dev, allow bypass if configured.
+    """Pluggable auth gate. Return True if signed in/allowed, else False.
+    Avoids experimental attributes and favors explicit state.
     """
+    # In dev, allow bypass unless explicit auth is enabled
     if not SETTINGS.auth_enabled:
-        if SETTINGS.app_env != "prod":
-            return True  # no auth in dev unless explicitly enabled
-        # In prod with auth disabled, still allow (or you can choose to block)
         return True
 
-    # Example stub: look for a cookie/param or fallback to dev bypass
-    user = st.experimental_user or None  # type: ignore[attr-defined]
+    # Simple example: check a session user or a query-param user
+    user = st.session_state.get("user") or st.query_params.get("user")
     if user:
         return True
 
@@ -169,38 +166,61 @@ def _seed_defaults_if_needed():
     try:
         if hasattr(db, "init_db"):
             db.init_db()
-        # Seed a default company if table exists and is empty
-        if hasattr(db, "get_companies") and hasattr(db, "create_company"):
-            companies = db.get_companies()
-            if not companies:
-                db.create_company({"name": "Default Company"})
+        # Prefer the canonical getter; fall back if older name exists
+        companies = None
+        if hasattr(db, "get_all_companies"):
+            companies = db.get_all_companies()
+        elif hasattr(db, "get_companies"):
+            companies = db.get_companies()  # legacy
+        if companies is not None and not companies and hasattr(db, "create_company"):
+            # Correct argument type: create_company expects a string name
+            db.create_company("Default Company")
     except Exception as e:
         if SETTINGS.show_errors:
             st.warning(f"DB init/seed skipped due to error: {e}")
 
 
-def _lazy_import_pages():
-    """Try import page modules; return callables or no-op placeholders."""
-    def null_page():
-        st.write("⚠️ Η σελίδα δεν είναι διαθέσιμη σε αυτό το build.")
 
-    def imp(fn_name: str) -> Callable[[], None]:
+def _lazy_import_pages():
+    """Try import page modules; return callables or no-op placeholders (with error details)."""
+    import importlib, sys, traceback
+
+    def make_null_page(err_msg: str = ""):
+        def _page():
+            st.write("⚠️ Η σελίδα δεν είναι διαθέσιμη σε αυτό το build.")
+            if err_msg:
+                with st.expander("Λεπτομέρειες σφάλματος", expanded=False):
+                    st.code(err_msg, language="text")
+        return _page
+
+    def imp(fn_name: str):
         parts = fn_name.split(":")
-        if len(parts) == 2:
-            mod, func = parts
-        else:
-            mod, func = fn_name, "main"
+        mod = parts[0]
+        func = parts[1] if len(parts) == 2 else "main"
+        # Try multiple import strategies
+        tried = []
+        for target in (mod, f"{__package__}.{mod}" if __package__ else None):
+            if not target:
+                continue
+            try:
+                module = importlib.import_module(target)
+                return getattr(module, func)
+            except Exception as ex:
+                tried.append((target, ex, traceback.format_exc()))
+        # Last resort: try __import__
         try:
             module = __import__(mod, fromlist=[func])
             return getattr(module, func)
-        except Exception:
-            return null_page
+        except Exception as ex:
+            tried.append((mod, ex, traceback.format_exc()))
+            # Build detailed error message
+            details = "\n\n".join([f"• import {t[0]} → {type(t[1]).__name__}: {t[1]}\n{t[2]}" for t in tried])
+            return make_null_page(details)
 
     return {
-        "🏢 Επιχείρηση": imp("page_business:page_business"),
+        "🏢 Επιχείρηση": imp("ui_pages:page_business"),
         "👥 Υπάλληλοι": imp("ui_pages:page_employees"),
         "📅 Πρόγραμμα": imp("ui_pages:page_schedule"),
-        "🤖 Chatbot": imp("ui_pages:page_chatbot"),
     }
 
 
