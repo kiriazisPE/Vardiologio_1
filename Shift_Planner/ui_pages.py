@@ -98,6 +98,19 @@ def _call_auto_fix_schedule(df, emps, company, start_date=None, days_count=None)
         return df, viols
 
     active_shifts = company.get("active_shifts", [])
+    
+
+    # Προειδοποίηση για βάρδιες χωρίς ορισμένες ώρες
+    try:
+        from constants import SHIFT_TIMES
+    except Exception:
+        SHIFT_TIMES = {}
+    unknown = [s for s in company.get("active_shifts", []) if s not in SHIFT_TIMES]
+    if unknown:
+        st.warning(
+            "Οι παρακάτω βάρδιες δεν έχουν ορισμένες ώρες στο `constants.SHIFT_TIMES` "
+            f"και θα παραλειφθούν από τον αλγόριθμο: {', '.join(unknown)}"
+        )
     roles = company.get("roles", [])
     rules = company.get("rules", {})
     role_settings = company.get("role_settings", {})
@@ -459,6 +472,47 @@ def _demo_seed():
         for n, r, a in demos:
             st.session_state.employees.append({"id": -1, "name": n, "roles": r, "availability": a})
 
+
+# ------------------------- Enhanced schedule helpers ------------------------- #
+def _push_history(df):
+    hist = st.session_state.setdefault("_sched_history", [])
+    hist.append(df.copy())
+    if len(hist) > 10:
+        st.session_state["_sched_history"] = hist[-10:]
+
+def _pop_history():
+    hist = st.session_state.get("_sched_history", [])
+    if hist:
+        return hist.pop()
+    return None
+
+def _df_with_select(df):
+    df2 = df.copy()
+    if "✓" not in df2.columns:
+        df2.insert(0, "✓", False)
+    return df2
+
+def _apply_bulk(ed, *, set_role=None, set_hours=None, set_employee=None):
+    mask = ed["✓"] == True if "✓" in ed.columns else [False]*len(ed)
+    idx = ed.index[mask] if hasattr(mask, "any") else []
+    if len(idx) == 0:
+        st.warning("Επίλεξε γραμμές (στήλη ✓).")
+        return ed
+    out = ed.copy()
+    if set_role is not None:
+        out.loc[idx, "Ρόλος"] = set_role if set_role != "— (χωρίς ρόλο)" else None
+    if set_hours is not None:
+        out.loc[idx, "Ώρες"] = float(set_hours)
+    if set_employee is not None:
+        out.loc[idx, "Υπάλληλος"] = set_employee
+    return out
+
+def _copy_week(df, *, days=7):
+    if df.empty:
+        return df
+    block = df.copy()
+    block["Ημερομηνία"] = pd.to_datetime(block["Ημερομηνία"]).dt.date + timedelta(days=days)
+    return pd.concat([df, block], ignore_index=True)
 # ======================== PAGES ========================
 
 def page_select_company():
@@ -706,11 +760,17 @@ def _tab_generate(company: Dict[str, Any], emps: List[Dict[str, Any]]):
     start_date = col[0].date_input("Έναρξη", dt_date.today(), key="gen_start")
     horizon = col[1].selectbox("Διάρκεια", ["7 ημέρες", "30 ημέρες"], index=0, key="gen_horizon")
     days_count = 7 if "7" in horizon else 30
+    use_opt = st.checkbox("🔬 Χρήση MILP optimizer (αν υπάρχει pulp)", value=False)
+
     if st.button("🛠 Δημιουργία & Προεπισκόπηση", type="primary"):
         try:
-            from scheduler import generate_schedule_v2, check_violations
+            if use_opt:
+                from scheduler import generate_schedule_opt as _gen
+            else:
+                from scheduler import generate_schedule_v2 as _gen
+            from scheduler import check_violations
         except Exception:
-            st.error("Λείπει η scheduler.generate_schedule_v2()")
+            st.error("Λείπει η scheduler.generate_schedule_*()")
             return
         roles = company.get("roles", [])
         active_shifts = company.get("active_shifts", [])
@@ -728,9 +788,7 @@ def _tab_generate(company: Dict[str, Any], emps: List[Dict[str, Any]]):
                             converted["per_shift"][s][role] = n
             role_settings = converted
         work_model = company.get("work_model", "5ήμερο")
-        df, missing = generate_schedule_v2(
-            start_date, emps, active_shifts, roles, rules, role_settings, days_count, work_model
-        )
+        df, missing = _gen(start_date, emps, active_shifts, roles, rules, role_settings, days_count, work_model)
         if not df.empty and not pd.api.types.is_datetime64_any_dtype(df["Ημερομηνία"]):
             df["Ημερομηνία"] = pd.to_datetime(df["Ημερομηνία"]).dt.date
         st.session_state.schedule = df
@@ -740,6 +798,7 @@ def _tab_generate(company: Dict[str, Any], emps: List[Dict[str, Any]]):
             tmp = df.copy()
             if "Ώρες" in tmp.columns:
                 tmp["Ώρες"] = pd.to_numeric(tmp["Ώρες"], errors="coerce").fillna(0).astype(float)
+
             st.session_state.violations = check_violations(tmp, rules=rules, work_model=work_model)
         except Exception:
             st.session_state.violations = pd.DataFrame()
@@ -751,20 +810,105 @@ def _tab_generate(company: Dict[str, Any], emps: List[Dict[str, Any]]):
 
     st.markdown("#### 🧾 Πίνακας προεπισκόπησης")
     role_opts = ["— (χωρίς ρόλο)"] + company.get("roles", [])
-    view_df = df.copy()
+    view_df = _df_with_select(df.copy())
     view_df["Ημερομηνία"] = pd.to_datetime(view_df["Ημερομηνία"]).dt.strftime("%Y-%m-%d")
+    names = [e.get("name","") for e in emps]
+
     edited = st.data_editor(
         view_df,
         column_config={
+            "✓": st.column_config.CheckboxColumn("✓"),
             "Βάρδια": st.column_config.TextColumn("Βάρδια", disabled=True),
             "Ημερομηνία": st.column_config.TextColumn("Ημερομηνία", disabled=True),
-            "Υπάλληλος": st.column_config.TextColumn("Υπάλληλος", disabled=True),
+            "Υπάλληλος": st.column_config.SelectboxColumn("Υπάλληλος", options=names, required=True),
             "Ρόλος": st.column_config.SelectboxColumn("Ρόλος", options=role_opts, required=False),
             "Ώρες": st.column_config.NumberColumn("Ώρες", step=0.5, format="%.1f"),
         },
         use_container_width=True, hide_index=True, num_rows="dynamic", key="gen_editor", height=380
     )
+    
     ed = edited.copy()
+    # Normalize types
+    ed["Ημερομηνία"] = pd.to_datetime(ed["Ημερομηνία"]).dt.date
+    ed["Ρόλος"] = ed["Ρόλος"].replace({"— (χωρίς ρόλο)": None})
+
+    st.markdown("#### 🛠️ Εργαλεία")
+    t1, t2, t3, t4, t5, t6 = st.columns(6)
+    with t1:
+        if st.button("🗑️ Διαγραφή επιλεγμένων"):
+            _push_history(st.session_state.schedule)
+            if "✓" in ed.columns:
+                ed = ed[~ed["✓"]].drop(columns=["✓"])
+            st.session_state.schedule = ed
+            st.toast("Διαγράφηκαν.", icon="✅")
+            st.rerun()
+    with t2:
+        if st.button("📋 Αντιγραφή εβδομάδας ➡️ επόμενη"):
+            _push_history(st.session_state.schedule)
+            ed = _copy_week(ed).drop(columns=["✓"], errors="ignore")
+            st.session_state.schedule = ed
+            st.toast("Αντιγράφηκε στο επόμενο 7ήμερο.", icon="✅")
+            st.rerun()
+    with t3:
+        if st.button("↩️ Αναίρεση"):
+            prev = _pop_history()
+            if prev is not None:
+                st.session_state.schedule = prev
+                st.rerun()
+            else:
+                st.info("Δεν υπάρχει ιστορικό.")
+    with t4:
+        up = st.file_uploader("Import CSV", type=["csv"], label_visibility="collapsed")
+        if up is not None:
+            try:
+                newdf = pd.read_csv(up)
+                needed = {"Ημερομηνία","Βάρδια","Υπάλληλος","Ρόλος","Ώρες"}
+                if not needed.issubset(set(newdf.columns)):
+                    st.error("To CSV πρέπει να έχει στήλες: " + ", ".join(needed))
+                else:
+                    newdf["Ημερομηνία"] = pd.to_datetime(newdf["Ημερομηνία"]).dt.date
+                    st.session_state.schedule = newdf
+                    st.toast("Φορτώθηκε CSV.", icon="✅")
+                    st.rerun()
+            except Exception as ex:
+                st.error(f"Σφάλμα στο import: {ex}")
+    with t5:
+        with st.popover("⚙️ Μαζικές αλλαγές"):
+            sel_role = st.selectbox("Ρόλος για επιλεγμένα", ["— (χωρίς ρόλο)"] + company.get("roles", []))
+            sel_emp = st.selectbox("Υπάλληλος για επιλεγμένα", names)
+            sel_hours = st.number_input("Ώρες για επιλεγμένα", 0.0, 24.0, 8.0, step=0.5, format="%.1f")
+            if st.button("Εφαρμογή"):
+                _push_history(st.session_state.schedule)
+                ed = _apply_bulk(ed, set_role=sel_role, set_employee=sel_emp, set_hours=sel_hours)
+                st.session_state.schedule = ed.drop(columns=["✓"], errors="ignore")
+                st.rerun()
+    with t6:
+        with st.popover("➕ Προσθήκη γραμμής"):
+            d_new = st.date_input("Ημερομηνία", value=dt_date.today(), key="add_d")
+            shift_new = st.selectbox("Βάρδια", company.get("active_shifts", []), key="add_s")
+            emp_new = st.selectbox("Υπάλληλος", names, key="add_e")
+            role_new = st.selectbox("Ρόλος", ["— (χωρίς ρόλο)"] + company.get("roles", []), key="add_r")
+            hrs_new = st.number_input("Ώρες", 0.0, 24.0, 8.0, step=0.5, format="%.1f", key="add_h")
+            if st.button("Προσθήκη"):
+                _push_history(st.session_state.schedule)
+                new_row = {"Ημερομηνία": d_new, "Βάρδια": shift_new, "Υπάλληλος": emp_new, "Ρόλος": (None if role_new == "— (χωρίς ρόλο)" else role_new), "Ώρες": float(hrs_new)}
+                st.session_state.schedule = pd.concat([ed.drop(columns=["✓"], errors="ignore"), pd.DataFrame([new_row])], ignore_index=True)
+                st.rerun()
+
+    # Persist edited schedule
+    st.session_state.schedule = ed.drop(columns=["✓"], errors="ignore")
+
+
+    if st.button("🧩 Auto-fix τρέχοντος πίνακα"):
+        try:
+            fixed_df, viols = _call_auto_fix_schedule(ed, emps, company, start_date=start_date, days_count=days_count)
+            st.session_state.schedule = fixed_df
+            st.session_state.violations = viols if isinstance(viols, pd.DataFrame) else pd.DataFrame()
+            st.success("Έγινε auto-fix και ενημερώθηκε ο πίνακας.")
+            st.rerun()
+        except Exception as ex:
+            st.error(f"Αποτυχία auto-fix: {ex}")
+
     ed["Ημερομηνία"] = pd.to_datetime(ed["Ημερομηνία"]).dt.date
     ed["Ρόλος"] = ed["Ρόλος"].replace({"— (χωρίς ρόλο)": None})
     st.session_state.schedule = ed
@@ -823,4 +967,3 @@ def _tab_generate(company: Dict[str, Any], emps: List[Dict[str, Any]]):
 
 def _column_key(d, shift):  # helper for grid column key
     return f"{d.isoformat()}__{shift}"
-
