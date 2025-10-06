@@ -614,30 +614,24 @@ def create_hybrid_scheduler(business_settings: Any, employees: List[Employee]) -
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-def get_openai_key():
-    """Get OpenAI API key from multiple sources"""
-    # Load environment variables
-    load_dotenv()
-    
-    # Try multiple sources for API key
-    AI_API_KEY = None
-    
-    # 1. Try Streamlit secrets first (for cloud deployment)
-    try:
-        import streamlit as st
-        if hasattr(st, 'secrets') and st.secrets:
-            AI_API_KEY = st.secrets.get("AI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
-    except Exception:
-        pass
-    
-    # 2. Fall back to environment variables
-    if not AI_API_KEY:
-        AI_API_KEY = os.getenv("AI_API_KEY") or os.getenv("OPENAI_API_KEY")
-    
-    return AI_API_KEY
+# Load environment variables
+load_dotenv()
+
+# Try multiple sources for API key
+AI_API_KEY = None
+
+# 1. Try Streamlit secrets first (for cloud deployment)
+try:
+    import streamlit as st
+    AI_API_KEY = st.secrets.get("AI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
+except:
+    pass
+
+# 2. Fall back to environment variables
+if not AI_API_KEY:
+    AI_API_KEY = os.getenv("AI_API_KEY") or os.getenv("OPENAI_API_KEY")
 
 # Initialize OpenAI
-AI_API_KEY = get_openai_key()
 openai_available = False
 if AI_API_KEY:
     try:
@@ -1191,26 +1185,45 @@ def generate_schedule_with_ai(emp_data: pd.DataFrame, shift_slots: List[Dict[str
         # Create optimization-specific prompt
         optimization_prompt = create_optimization_prompt(optimization_focus, constraint_level)
         
+        # Limit employee data to prevent token overflow (sample key employees from each role)
+        role_samples = {}
+        for _, emp in emp_data.iterrows():
+            role = emp['role']
+            if role not in role_samples:
+                role_samples[role] = []
+            if len(role_samples[role]) < 3:  # Max 3 employees per role for AI prompt
+                role_samples[role].append({
+                    'id': emp['id'],
+                    'name': emp['name'][:15],  # Truncate name to save tokens
+                    'role': role,
+                    'pref_shift': emp['preferred_shift'],
+                    'max_hrs': emp['max_hours_per_week']
+                })
+        
+        # Flatten samples
+        limited_employees = []
+        for role_list in role_samples.values():
+            limited_employees.extend(role_list)
+        
         prompt = f"""Generate {generation_mode.lower()} schedule with {optimization_focus.lower()} optimization.
 
-EMPLOYEES ({len(emp_data)}):
-{json.dumps(emp_summary[:10], default=str)}  
+EMPLOYEES (Sample of {len(limited_employees)} from {len(emp_data)} total):
+{json.dumps(limited_employees, default=str)}  
 
-SHIFTS & RULES:
-{json.dumps(shift_summary[:7], default=str)}  
+SHIFTS REQUIRED:
+{json.dumps(shift_summary[:5], default=str)}  
 
 OPTIMIZATION: {optimization_prompt}
 
 CONSTRAINTS: {constraint_level} level
 - Day/Night shifts: {getattr(bs, 'day_shift_length', 8)}h each
 - Period: {getattr(bs, 'planning_start', 'N/A')} ({getattr(bs, 'planning_days', 7)} days)
-- Enhanced rules: {use_advanced_rules}
 
 OUTPUT: CSV only
 date,role,shift_type,employee_id
-2025-09-23,Barista,day,1
+2025-09-23,Manager,day,1
 
-Generate optimal schedule."""
+Generate optimal schedule for ALL {len(emp_data)} employees."""
 
         # Call OpenAI API with optimized prompt
         response = openai.ChatCompletion.create(
