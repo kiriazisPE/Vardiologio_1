@@ -1,28 +1,11 @@
-# .streamlit/config.toml
-[theme]
-base = "light"
-primaryColor = "#2563EB"
-backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F6F8FB"
-textColor = "#0F172A"
-font = "sans serif"
+[general]
+dataFrameSerialization = "legacy"
 
-[theme]
-base="dark"  # choose "light" or "dark" as default
-primaryColor="#7C3AED"   # violet-600
-backgroundColor="#0E1117"
-secondaryBackgroundColor="#0044fdff"
-textColor="#E5E7EB"
-font="sans serif"
+[server]
+headless = true
+port = $PORT
+enableCORS = false
+enableXsrfProtection = false
 
-
-# Optional, nice-to-haves:
-# [client]
-# toolbarMode = "viewer"             # hide dev toolbar for cleaner look
-#
-# [server]
-# enableXsrfProtection = true
-# maxUploadSize = 200
-#
-# [browser]
-# gatherUsageStats = false
+[browser]
+gatherUsageStats = false
