@@ -239,4 +239,4 @@ This project is designed for small business scheduling optimization. Built with 
 ---
 
 **Ready to optimize your employee scheduling?** 🎯  
-Start with `python setup_sample_data.py` then `start_shift_plus.bat` and explore the coffee shop demo!
+Start with `python setup_sample_data.py` then `start_shift_plus.bat` and explore the coffee shop demo!# Force refresh: 10/06/2025 14:41:15
