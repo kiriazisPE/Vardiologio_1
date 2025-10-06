@@ -614,24 +614,30 @@ def create_hybrid_scheduler(business_settings: Any, employees: List[Employee]) -
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# Load environment variables
-load_dotenv()
-
-# Try multiple sources for API key
-AI_API_KEY = None
-
-# 1. Try Streamlit secrets first (for cloud deployment)
-try:
-    import streamlit as st
-    AI_API_KEY = st.secrets.get("AI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
-except:
-    pass
-
-# 2. Fall back to environment variables
-if not AI_API_KEY:
-    AI_API_KEY = os.getenv("AI_API_KEY") or os.getenv("OPENAI_API_KEY")
+def get_openai_key():
+    """Get OpenAI API key from multiple sources"""
+    # Load environment variables
+    load_dotenv()
+    
+    # Try multiple sources for API key
+    AI_API_KEY = None
+    
+    # 1. Try Streamlit secrets first (for cloud deployment)
+    try:
+        import streamlit as st
+        if hasattr(st, 'secrets') and st.secrets:
+            AI_API_KEY = st.secrets.get("AI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
+    except Exception:
+        pass
+    
+    # 2. Fall back to environment variables
+    if not AI_API_KEY:
+        AI_API_KEY = os.getenv("AI_API_KEY") or os.getenv("OPENAI_API_KEY")
+    
+    return AI_API_KEY
 
 # Initialize OpenAI
+AI_API_KEY = get_openai_key()
 openai_available = False
 if AI_API_KEY:
     try:

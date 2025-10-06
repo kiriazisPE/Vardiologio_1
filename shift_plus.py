@@ -27,31 +27,46 @@ except ImportError as e:
     core_available = False
 
 # --- AI API Key and OpenAI availability ---
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-    
-    # Try multiple sources for API key (environment, secrets, .env)
+def get_api_key():
+    """Get OpenAI API key from multiple sources"""
+    # Try multiple sources for API key
     AI_API_KEY = None
     
     # 1. Try Streamlit secrets first (for cloud deployment)
     try:
-        AI_API_KEY = st.secrets.get("AI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
-    except:
+        if hasattr(st, 'secrets') and st.secrets:
+            AI_API_KEY = st.secrets.get("AI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
+    except Exception:
         pass
     
     # 2. Fall back to environment variables
     if not AI_API_KEY:
+        try:
+            from dotenv import load_dotenv
+            load_dotenv()
+        except ImportError:
+            pass
         AI_API_KEY = os.getenv("AI_API_KEY") or os.getenv("OPENAI_API_KEY")
     
+    return AI_API_KEY
+
+# Initialize OpenAI API
+try:
+    AI_API_KEY = get_api_key()
     if AI_API_KEY:
         openai.api_key = AI_API_KEY
-    _ = openai.api_key
-    openai_available = bool(_)
+        openai_available = True
+    else:
+        openai_available = False
+except Exception as e:
+    openai_available = False
+    st.error(f"OpenAI initialization error: {e}")
 except ImportError:
     openai_available = False
-if not openai_available:
-    st.error("OpenAI API key is missing or invalid. Please set AI_API_KEY or OPENAI_API_KEY in your environment or .env file.")
+
+# Check API key availability and show appropriate message
+if not openai_available and not AI_API_KEY:
+    st.warning("⚠️ OpenAI API key not found. Please add your API key to Streamlit secrets or environment variables for AI-powered scheduling features.")
 
 # --- Enhanced Business Setup Page ---
 def page_business():
