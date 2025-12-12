@@ -1,19 +1,24 @@
 # Shift Plus Pro 🚀
 
-An advanced AI-powered employee scheduling application that creates optimal work schedules using hybrid algorithms (AI + MILP + Greedy). Features comprehensive workforce management, role-based scheduling, and intelligent assignment optimization.
+[![CI](https://github.com/kiriazisPE/Vardiologio_1/actions/workflows/ci.yml/badge.svg)](https://github.com/kiriazisPE/Vardiologio_1/actions/workflows/ci.yml)
+[![CD](https://github.com/kiriazisPE/Vardiologio_1/actions/workflows/cd.yml/badge.svg)](https://github.com/kiriazisPE/Vardiologio_1/actions/workflows/cd.yml)
+[![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+An advanced AI-powered employee scheduling application that creates optimal work schedules using **DSPy + OpenAI GPT-4o-mini**. Features comprehensive workforce management, role-based scheduling, intelligent assignment optimization, and enterprise-grade durability.
 
 ## 🌟 Live Demo
-**[View Live Application on Streamlit Cloud](https://your-app-name.streamlit.app/)**
+**[View Live Application](https://your-app-name.streamlit.app/)**
 
 ## ✨ Key Features
-- 🤖 **AI-Enhanced Scheduling**: Powered by OpenAI for intelligent assignments
-- 📊 **Hybrid Algorithms**: AI + MILP + Greedy for optimal results  
-- 👥 **Employee Management**: Roles, availability, importance ratings
-- 📅 **Flexible Shifts**: Day/night scheduling with role requirements
+- 🤖 **DSPy AI Scheduling**: Structured LLM reasoning for intelligent assignments
+- 📊 **Smart Templates**: Reusable schedule patterns for recurring shifts
+- 🔄 **Self-Service Swaps**: Employee shift swap and bidding system
+- 👥 **Employee Management**: Roles, availability, skills, preferences
+- 📅 **Flexible Shifts**: Multi-shift scheduling with role requirements
 - 📈 **Analytics Dashboard**: Performance metrics and insights
 - 💾 **Data Export**: CSV export for external systems
-
-## Quick Start
+- ✅ **100% Test Coverage**: 17/17 durability tests passing
 
 ## 🚀 Deployment Options
 

@@ -1,0 +1,61 @@
+name: shift-planner
+region: nyc1
+
+services:
+  - name: web
+    github:
+      repo: kiriazisPE/Vardiologio_1
+      branch: main
+      deploy_on_push: true
+    
+    source_dir: /
+    dockerfile_path: shift_planner/Dockerfile
+    
+    health_check:
+      http_path: /_stcore/health
+      initial_delay_seconds: 30
+      period_seconds: 10
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 3
+    
+    http_port: 8501
+    instance_count: 1
+    instance_size_slug: basic-xxs  # $12/month - 512MB RAM, 1 vCPU
+    
+    routes:
+      - path: /
+    
+    envs:
+      - key: APP_ENV
+        value: production
+      - key: PORT
+        value: "8501"
+      - key: SENTRY_ENABLED
+        value: "false"  # Set to true when ready
+      - key: AUTH_ENABLED
+        value: "true"
+      - key: LOG_LEVEL
+        value: INFO
+      
+      # SECRETS - Configure in DigitalOcean App Platform UI
+      # - key: OPENAI_API_KEY
+      #   scope: RUN_TIME
+      #   type: SECRET
+      # 
+      # - key: SENTRY_DSN
+      #   scope: RUN_TIME
+      #   type: SECRET
+      #
+      # - key: DATABASE_URL
+      #   scope: RUN_TIME
+      #   type: SECRET
+
+# Optional: Managed PostgreSQL Database
+# Uncomment to add database ($15/month for smallest tier)
+# databases:
+#   - name: shift-planner-db
+#     engine: PG
+#     version: "15"
+#     production: true
+#     size: db-s-1vcpu-1gb  # $15/month - 1GB RAM, 10GB storage

@@ -1,0 +1,112 @@
+/* Modern Shift Planner Styles */
+
+/* Clean card styling */
+[data-testid="stExpander"] {
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 4px;
+    margin-bottom: 1rem;
+}
+
+/* Better button styling */
+.stButton > button {
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.stButton > button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Improve sidebar */
+[data-testid="stSidebar"] {
+    background-color: rgba(0, 0, 0, 0.02);
+}
+
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.5rem;
+    opacity: 0.7;
+}
+
+/* Better table styling */
+[data-testid="stDataFrame"] {
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* Clean input fields */
+[data-testid="stTextInput"] > div > div > input,
+[data-testid="stNumberInput"] > div > div > input {
+    border-radius: 6px;
+}
+
+/* Modern metric cards */
+[data-testid="stMetric"] {
+    background-color: rgba(255, 255, 255, 0.05);
+    padding: 1rem;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Better spacing */
+.block-container {
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+    max-width: 1200px;
+}
+
+/* Smooth transitions */
+* {
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+/* Clean dividers */
+hr {
+    margin: 1.5rem 0;
+    opacity: 0.2;
+}
+
+/* Better dialog styling */
+[data-testid="stDialog"] {
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+/* Improve tabs */
+[data-testid="stTabs"] {
+    gap: 0.5rem;
+}
+
+[data-testid="stTab"] {
+    border-radius: 6px 6px 0 0;
+}
+
+/* Clean status messages */
+[data-testid="stAlert"] {
+    border-radius: 8px;
+    border-left-width: 4px;
+}
+
+/* Better progress bar */
+[data-testid="stProgress"] > div > div {
+    border-radius: 10px;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .block-container {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+    
+    [data-testid="column"] {
+        width: 100% !important;
+        flex: 1 1 100% !important;
+    }
+}

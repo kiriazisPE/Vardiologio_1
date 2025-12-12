@@ -1,0 +1,16 @@
+# Shift Planner — Runbook
+
+## Overview
+Streamlit app for staff scheduling with rule checks and an auto-fix pass.
+- Env/config read from `.env` (`APP_ENV`, `LOG_LEVEL`, `DB_FILE`, `SERVER_PORT`, `SESSION_TTL_MIN`, `TZ`).:contentReference[oaicite:2]{index=2}
+- DB: SQLite with WAL + FK enabled for durability and integrity.:contentReference[oaicite:3]{index=3}
+- Auth: Required in `APP_ENV=prod`; app stops if `.streamlit/auth.yaml` is missing.:contentReference[oaicite:4]{index=4}
+- Smart v2 generator respects roles, availability, rest, weekly caps; returns “missing” rows when staffing isn’t possible.:contentReference[oaicite:5]{index=5}
+
+## How to run (container host)
+1. Create `/opt/shift-planner/.env` from `.env.example` (set `APP_ENV=prod`).
+2. Place `.streamlit/auth.yaml` (see template) on the host.
+3. Start app (examples):
+   ```bash
+   export $(grep -v '^#' .env | xargs)
+   streamlit run main.py --server.port=$SERVER_PORT --server.address=0.0.0.0
