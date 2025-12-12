@@ -12,3 +12,7 @@ python-dateutil>=2.9.0
 openai>=1.54.0       # AI-powered scheduling optimization
 dspy-ai>=2.4.0       # Structured LLM programming with signatures
 pydantic>=2.0.0      # Data validation and type safety
+
+# Production dependencies
+psycopg2-binary>=2.9.9  # PostgreSQL adapter
+sentry-sdk>=2.0.0       # Error tracking and monitoring
