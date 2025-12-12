@@ -6,6 +6,8 @@
 # Database files
 *.sqlite3
 *.db
+*.sqlite3-wal
+*.sqlite3-shm
 
 # Python cache
 __pycache__/
@@ -28,6 +30,34 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
 
 # IDE
 .vscode/
