@@ -121,6 +121,7 @@ jobs:
           context: ./shift_planner
           file: ./shift_planner/Dockerfile
           push: false
+          load: true
           tags: shift-planner:test
           cache-from: type=gha
           cache-to: type=gha,mode=max
