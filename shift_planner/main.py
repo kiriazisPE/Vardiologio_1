@@ -231,6 +231,11 @@ def _auth_gate():
         import streamlit_authenticator as stauth
         with open(cfg_path, "r", encoding="utf-8") as f:
             auth_cfg = yaml.safe_load(f)
+        
+        # Suppress signature verification warnings (they'll be cleared on next login)
+        import warnings
+        warnings.filterwarnings("ignore", message=".*Signature verification failed.*")
+        
         authenticator = stauth.Authenticate(
             auth_cfg["credentials"],
             auth_cfg["cookie"]["name"],
@@ -282,6 +287,7 @@ def _auth_gate():
     if auth_status is not True:
         if auth_status is False:
             st.error("Λάθος username / password.")
+            st.info("💡 If you see 'Signature verification failed' errors, clear your browser cookies and refresh.")
         else:
             st.warning("Παρακαλώ εισάγετε username και password.")
         st.stop()

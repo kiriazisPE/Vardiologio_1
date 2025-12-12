@@ -19,7 +19,7 @@ credentials:
 
 cookie:
   expiry_days: 30
-  key: $(New-Guid).Guid  # Generated random key
+  key: fcb089d12e29ce9f323a5390e63070956d6f6722a5bfac62975e59a8102226fe
   name: shift_planner_cookie
 
 preauthorized:
