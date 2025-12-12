@@ -1,10 +1,84 @@
+# Python cache and compiled files
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.db
-*.sqlite3
-.env
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+test_*.py
+*_test.py
+pytest.ini
+
+# Development tools
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# CI/CD
+.github/
+
+# Documentation
+*.md
+docs/
+README
+DOCUMENTATION.md
+QUICKSTART.md
+INSTALLATION.md
+AI_BACKEND_SUMMARY.md
+DSPY_IMPLEMENTATION_SUMMARY.md
+DSPY_README.md
+IMPLEMENTATION_COMPLETE.md
+MODERNIZATION_SUMMARY.md
+README_ARCHITECTURE.md
+TEST_RESULTS.md
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Streamlit secrets
+.streamlit/secrets.toml
+.streamlit/auth.yaml
+
+# Database files (use volumes instead)
+*.sqlite3
+*.db
+shift_maker.sqlite3
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# OS files
 .DS_Store
+Thumbs.db
