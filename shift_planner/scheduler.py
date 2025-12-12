@@ -17,6 +17,7 @@ from typing import Dict, List, Tuple
 from collections import defaultdict, Counter
 import datetime as dt
 import pandas as pd
+import re
 from constants import DAYS, SHIFT_TIMES
 
 # AI-powered scheduling

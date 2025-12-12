@@ -1,0 +1,41 @@
+# Authentication configuration for Shift Planner
+# Passwords are hashed using bcrypt for security
+# Generated: 2025-12-12 - Passwords rotated after security incident
+
+credentials:
+  usernames:
+    admin:
+      email: admin@shiftplanner.com
+      name: Administrator
+      password: $2b$12$YXbqWCwpDVH85r84XMVmvu.qUrRUQVV50HzVSRB49TX7Xr8XVVYsC
+    manager:
+      email: manager@shiftplanner.com
+      name: Manager User
+      password: $2b$12$o.fvKAOefIPhAap2YzHbNOnBlLs/DA673ndjdNcY56yHvDNsfxl1G
+    user:
+      email: user@shiftplanner.com
+      name: Regular User
+      password: $2b$12$Ids71Rl0ZiOwz.eboSS9xOB5yw6uepbUPruZullOsucBe2nR5eeH.
+
+cookie:
+  expiry_days: 30
+  key: $(New-Guid).Guid  # Generated random key
+  name: shift_planner_cookie
+
+preauthorized:
+  emails:
+    - admin@shiftplanner.com
+
+# Role-based permissions (optional - for future use)
+roles:
+  admin:
+    - view_all_schedules
+    - edit_schedules
+    - manage_employees
+    - manage_settings
+  manager:
+    - view_all_schedules
+    - edit_schedules
+    - view_employees
+  user:
+    - view_own_schedule

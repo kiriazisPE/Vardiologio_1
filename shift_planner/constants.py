@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime, timedelta, time
+from typing import Optional
 import os
 import logging, sys
 
@@ -13,7 +14,7 @@ logging.basicConfig(
 logger = logging.getLogger("shift_planner")
 
 # ---------- App Config ----------
-APP_ENV =  os.getenv("APP_ENV", "dev").lower()  # dev|prod  # dev|prod
+APP_ENV = os.getenv("APP_ENV", "dev").lower()  # dev|prod
 DB_FILE = os.getenv("DB_FILE", "shifts.db")
 SERVER_PORT = int(os.getenv("SERVER_PORT", "8501"))
 SESSION_TTL_MIN = int(os.getenv("SESSION_TTL_MIN", "240"))
@@ -51,7 +52,7 @@ DEFAULT_RULES = {
 
 
 # ---------- Utility Functions ----------
-def shift_duration(shift: str) -> int | None:
+def shift_duration(shift: str) -> Optional[int]:
     """Return duration in hours, handling wrap-around shifts.
     Returns None if shift label is not in SHIFT_TIMES.
     """
@@ -64,7 +65,7 @@ def shift_duration(shift: str) -> int | None:
 
 
 
-def shift_end_datetime(d: datetime, shift: str) -> datetime | None:
+def shift_end_datetime(d: datetime, shift: str) -> Optional[datetime]:
     """Compute end datetime for a shift that may cross midnight.
     Returns None if shift label is unknown.
     """
@@ -76,7 +77,7 @@ def shift_end_datetime(d: datetime, shift: str) -> datetime | None:
     s, e = times
     # If end < start, the shift wraps past midnight → next day
     end_date = d + timedelta(days=1) if e < s else d
-    return datetime.combine(end_date, time(hour=e))
+    return datetime(end_date.year, end_date.month, end_date.day, e, 0)
 
 
 

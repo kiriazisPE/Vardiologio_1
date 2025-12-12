@@ -223,7 +223,7 @@ def _auth_gate():
             st.info("🔓 Authentication disabled.")
         return
 
-    app_env = os.getenv("APP_ENV", "dev").lower()  # dev|prod  # dev|prod
+    app_env = os.getenv("APP_ENV", "dev").lower()  # dev|prod
     cfg_path = ".streamlit/auth.yaml"
 
     authenticator = None

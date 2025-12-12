@@ -4,6 +4,7 @@ import pandas as pd
 import datetime as dt
 from datetime import date as dt_date, timedelta
 
+from typing import Optional
 from db import (
     get_all_companies, get_company, update_company, create_company,
     get_employees, add_employee, update_employee, delete_employee,
@@ -723,7 +724,7 @@ def page_schedule():
         st.session_state.missing_staff = missing_df
         st.session_state.violations = viols
 
-        def _name_to_id(nm: str) -> int | None:
+        def _name_to_id(nm: str) -> Optional[int]:
             return get_employee_id_by_name(company["id"], nm)
 
         assignments = []

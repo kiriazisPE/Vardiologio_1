@@ -298,7 +298,7 @@ def delete_employee(employee_id: int) -> None:
 
 
 # ---------------- Schedule Functions ---------------- #
-def add_schedule_entry(company_id: int, employee_id: int, date: str, shift: str, role: str | None = None) -> None:
+def add_schedule_entry(company_id: int, employee_id: int, date: str, shift: str, role: Optional[str] = None) -> None:
     # Validate FK membership early for better UX
     with get_conn() as conn:
         emp = conn.execute("SELECT company_id FROM employees WHERE id=?", (employee_id,)).fetchone()
