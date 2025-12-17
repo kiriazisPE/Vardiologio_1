@@ -1,0 +1,66 @@
+{
+  "name": "week_simple",
+  "description": "Simple 3-day schedule with 2 employees, minimal constraints",
+  "employees": [
+    {
+      "id": 1,
+      "name": "Maria Papadopoulou",
+      "roles": ["Barista", "Cashier"],
+      "availability": {
+        "Δευτέρα": ["Πρωί", "Απόγευμα"],
+        "Τρίτη": ["Πρωί", "Απόγευμα"],
+        "Τετάρτη": ["Πρωί"]
+      },
+      "preferences": {
+        "preferred_shifts": ["Πρωί"],
+        "max_shifts_per_week": 5
+      }
+    },
+    {
+      "id": 2,
+      "name": "Nikos Georgiou",
+      "roles": ["Cashier", "Server"],
+      "availability": {
+        "Δευτέρα": ["Απόγευμα", "Βράδυ"],
+        "Τρίτη": ["Απόγευμα", "Βράδυ"],
+        "Τετάρτη": ["Απόγευμα", "Βράδυ"]
+      },
+      "preferences": {
+        "preferred_shifts": ["Απόγευμα"],
+        "max_shifts_per_week": 5
+      }
+    }
+  ],
+  "shifts_required": {
+    "2025-01-06": ["Πρωί", "Απόγευμα"],
+    "2025-01-07": ["Πρωί", "Απόγευμα"],
+    "2025-01-08": ["Πρωί", "Απόγευμα"]
+  },
+  "roles_required": {
+    "2025-01-06_Πρωί": {"Barista": 1},
+    "2025-01-06_Απόγευμα": {"Cashier": 1},
+    "2025-01-07_Πρωί": {"Barista": 1},
+    "2025-01-07_Απόγευμα": {"Cashier": 1},
+    "2025-01-08_Πρωί": {"Barista": 1},
+    "2025-01-08_Απόγευμα": {"Server": 1}
+  },
+  "constraints": {
+    "max_daily_hours_5days": 8,
+    "max_daily_hours_6days": 9,
+    "max_daily_hours_7days": 9,
+    "min_daily_rest": 11,
+    "weekly_hours_5days": 40,
+    "weekly_hours_6days": 48,
+    "weekly_hours_7days": 56,
+    "max_consecutive_days": 6,
+    "work_model": "5ήμερο"
+  },
+  "week_start": "2025-01-06",
+  "expected": {
+    "max_hard_violations": 0,
+    "max_soft_violations": 2,
+    "min_coverage_score": 100.0,
+    "min_overall_score": 80.0,
+    "description": "Should produce perfect schedule with no hard violations, minimal soft violations"
+  }
+}
