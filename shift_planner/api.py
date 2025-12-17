@@ -30,18 +30,27 @@ from db import (
     get_employees, add_employee, update_employee, delete_employee,
     get_schedule_range, bulk_save_week_schedule
 )
-from app.services.planner_service import get_planner_service
+
+# Lazy import for DSPy (slow on Windows)
+_planner_service = None
+
+def get_planner():
+    global _planner_service
+    if _planner_service is None:
+        from app.services.planner_service import get_planner_service
+        _planner_service = get_planner()
+    return _planner_service
 
 # Initialize database on startup (using lifespan instead of deprecated on_event)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     init_db()
-    print("✅ Database initialized")
-    print("✅ PlannerService loaded")
+    print("Database initialized")
+    # Note: PlannerService loads lazily on first use
     yield
     # Shutdown (if needed)
-    print("👋 Shutting down API")
+    print("Shutting down API")
 
 # Initialize FastAPI app with lifespan
 app = FastAPI(
@@ -124,7 +133,7 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check for load balancers"""
-    service = get_planner_service()
+    service = get_planner()
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
@@ -245,7 +254,7 @@ async def generate_schedule(request: ScheduleGenerateRequest):
         raise HTTPException(status_code=400, detail="No employees found for this company")
     
     # Get planner service
-    service = get_planner_service()
+    service = get_planner()
     
     # Generate schedule
     try:
@@ -302,7 +311,7 @@ async def analyze_schedule(company_id: int, schedule: List[Dict[str, Any]]):
         raise HTTPException(status_code=404, detail="Company not found")
     
     employees = get_employees(company_id)
-    service = get_planner_service()
+    service = get_planner()
     
     result = service.analyze_violations(
         schedule=schedule,
@@ -320,7 +329,7 @@ async def analyze_schedule(company_id: int, schedule: List[Dict[str, Any]]):
 @app.get("/api/reasoning/version")
 async def get_reasoning_version():
     """Get current reasoning artifact version and metadata"""
-    service = get_planner_service()
+    service = get_planner()
     return service.get_version_info()
 
 
@@ -336,7 +345,7 @@ async def explain_decision(
     
     This is critical for transparency and compliance.
     """
-    service = get_planner_service()
+    service = get_planner()
     
     result = service.explain_decision(
         assignment=assignment,
