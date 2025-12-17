@@ -21,6 +21,7 @@ import os
 # Import database and services
 import sys
 from pathlib import Path
+from contextlib import asynccontextmanager
 sys.path.insert(0, str(Path(__file__).parent))
 
 from db import (
@@ -31,11 +32,23 @@ from db import (
 )
 from app.services.planner_service import get_planner_service
 
-# Initialize FastAPI app
+# Initialize database on startup (using lifespan instead of deprecated on_event)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    init_db()
+    print("✅ Database initialized")
+    print("✅ PlannerService loaded")
+    yield
+    # Shutdown (if needed)
+    print("👋 Shutting down API")
+
+# Initialize FastAPI app with lifespan
 app = FastAPI(
     title="Shift Planner API",
     description="AI-powered shift scheduling with DSPy reasoning engine",
-    version="2.0.0"
+    version="2.0.0",
+    lifespan=lifespan
 )
 
 # CORS middleware for React frontend
@@ -50,13 +63,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Initialize database on startup
-@app.on_event("startup")
-async def startup_event():
-    init_db()
-    print("✅ Database initialized")
-    print("✅ PlannerService loaded")
 
 
 # ============================================================================
@@ -364,8 +370,8 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", "8000"))
     reload = os.getenv("APP_ENV", "dev") == "dev"
     
-    print(f"🚀 Starting Shift Planner API on port {port}")
-    print(f"📚 Docs available at: http://localhost:{port}/docs")
+    print(f"Starting Shift Planner API on port {port}")
+    print(f"Docs available at: http://localhost:{port}/docs")
     
     uvicorn.run(
         "api:app",
